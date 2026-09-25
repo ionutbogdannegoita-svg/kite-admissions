@@ -273,6 +273,15 @@ def date_discrepancy(appointment: Mapping[str, Any]) -> bool:
     return calendar_day is not None and visited_day != calendar_day
 
 
+def needs_report(appointment: Mapping[str, Any], now: datetime) -> bool:
+    """Appuntamento passato, non annullato, senza esito: «Resoconto da completare» (SPEC §7)."""
+    if appointment["src_status"] == "CANCELLED_SOURCE" or appointment["visit_outcome"]:
+        return False
+    if appointment["src_end_at"]:
+        return appointment["src_end_at"] < stamp(now)
+    return bool(appointment["src_end_date"]) and appointment["src_end_date"] <= rome_today(now).isoformat()
+
+
 def family_appointments(db: Database, family_id: str) -> list[sqlite3.Row]:
     return db.all(f"{SELECT} WHERE a.family_id = ? ORDER BY {START_KEY} DESC", (family_id,))
 

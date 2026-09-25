@@ -6,8 +6,12 @@ from typing import Any
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
+from ..schema import MANUAL_INTERACTIONS
+from ..services import appointments as appointment_service
 from ..services import families as family_service
+from ..services import interactions as interaction_service
 from ..services import leads as lead_service
+from ..services import timeline as timeline_service
 from ..services.common import (
     AlreadySavedError,
     NotFoundError,
@@ -15,9 +19,10 @@ from ..services.common import (
     ValidationError,
     creation_id,
     new_id,
+    stamp,
     valid_uuid,
 )
-from ..timeutil import rome_today
+from ..timeutil import rome_today, utc_iso_to_local_input
 from . import flash_error, flash_ok, flash_warning, get_db, state
 
 bp = Blueprint("families", __name__, url_prefix="/famiglie")
@@ -109,12 +114,80 @@ def create():
 @bp.get("/<family_id>")
 def detail(family_id: str):
     family = _family_or_404(family_id)
+    db = get_db()
+    now = state().now()
+    appointments = appointment_service.family_appointments(db, family_id)
     return render_template(
         "family/detail.html", active="families", family=family,
-        leads=lead_service.family_leads(get_db(), family_id), has_contact=family_service.has_contact(family),
+        leads=lead_service.family_leads(db, family_id), has_contact=family_service.has_contact(family),
         years=_year_options(), grades=lead_service.GRADE_SUGGESTIONS, new_lead_id=new_id(),
-        today=rome_today(state().now()).isoformat(),
+        today=rome_today(now).isoformat(),
+        appointments=appointments,
+        needs_report={row["id"] for row in appointments if appointment_service.needs_report(row, now)},
+        timeline=timeline_service.family_timeline(db, family_id),
+        new_note_id=new_id(), note_types=MANUAL_INTERACTIONS,
+        now_local=utc_iso_to_local_input(stamp(now)),
     )
+
+
+def _note_or_404(family_id: str, note_id: str):
+    if not valid_uuid(note_id):
+        abort(404)
+    try:
+        return interaction_service.get_note(get_db(), family_id, note_id)
+    except NotFoundError:
+        abort(404)
+
+
+@bp.post("/<family_id>/note")
+def create_note(family_id: str):
+    _family_or_404(family_id)
+    try:
+        values = interaction_service.parse_note(request.form, state().now())
+        interaction_service.create_note(get_db(), family_id, values, note_id=creation_id(request.form.get("new_id")),
+                                        now=state().now())
+    except ValidationError as exc:
+        flash_error(exc.message)
+        return redirect(url_for("families.detail", family_id=family_id) + "#note")
+    except AlreadySavedError:
+        flash_warning("La nota era già stata salvata.")
+        return redirect(url_for("families.detail", family_id=family_id) + "#cronologia")
+    flash_ok("Annotazione aggiunta alla cronologia.")
+    return redirect(url_for("families.detail", family_id=family_id) + "#cronologia")
+
+
+@bp.route("/<family_id>/note/<note_id>/modifica", methods=["GET", "POST"])
+def edit_note(family_id: str, note_id: str):
+    family = _family_or_404(family_id)
+    note = _note_or_404(family_id, note_id)
+    leads = lead_service.family_leads(get_db(), family_id)
+    if request.method == "GET":
+        form = dict(note)
+        form["occurred_at"] = utc_iso_to_local_input(note["occurred_at"])
+        return render_template("family/note_form.html", active="families", family=family, note=note, form=form,
+                               leads=leads, note_types=MANUAL_INTERACTIONS, errors=[])
+    form = request.form
+    try:
+        values = interaction_service.parse_note(form, state().now())
+        interaction_service.update_note(get_db(), family_id, note_id, values, revision=_revision(), now=state().now())
+    except (ValidationError, StaleWriteError) as exc:
+        code = 409 if isinstance(exc, StaleWriteError) else 422
+        return render_template("family/note_form.html", active="families", family=family, note=note, form=form,
+                               leads=leads, note_types=MANUAL_INTERACTIONS, errors=[exc.message]), code
+    flash_ok("Annotazione aggiornata.")
+    return redirect(url_for("families.detail", family_id=family_id) + "#cronologia")
+
+
+@bp.post("/<family_id>/note/<note_id>/elimina")
+def delete_note(family_id: str, note_id: str):
+    _family_or_404(family_id)
+    _note_or_404(family_id, note_id)
+    if request.form.get("confirm") != "1":
+        flash_warning("Spunta la conferma per eliminare l'annotazione.")
+        return redirect(url_for("families.edit_note", family_id=family_id, note_id=note_id))
+    interaction_service.delete_note(get_db(), family_id, note_id)
+    flash_ok("Annotazione eliminata.")
+    return redirect(url_for("families.detail", family_id=family_id) + "#cronologia")
 
 
 @bp.route("/<family_id>/modifica", methods=["GET", "POST"])
