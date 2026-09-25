@@ -460,6 +460,14 @@ def _kind(session):
     return raised.value.kind
 
 
+def test_granted_scopes_are_checked_in_both_formats():
+    events, calendars = google_api.SCOPES
+    assert google_api.events_scope_granted([events, calendars])
+    assert google_api.events_scope_granted(f"{events} {calendars}")
+    assert not google_api.events_scope_granted([calendars])
+    assert not google_api.events_scope_granted(None)
+
+
 def test_requested_scopes_are_read_only():
     assert google_api.SCOPES == ("https://www.googleapis.com/auth/calendar.events.readonly",
                                  "https://www.googleapis.com/auth/calendar.calendarlist.readonly")

@@ -2,100 +2,62 @@
 
 ## Status
 
-`READY_FOR_IMPLEMENTATION`
+`V1_COMPLETE`
 
-Data e ora della sospensione documentata: **2026-09-25 23:09:05 +02:00 (Europe/Rome)**.
+Aggiornato il **2026-09-26 (Europe/Rome)**. Implementazione completa della V1 sul branch `v1-implementation`, in attesa di revisione e merge su `main` da parte di Ionut.
 
-Punto di ripresa: tag annotato `design-v1`.
+[SPEC.md](SPEC.md) resta la fonte autorevole (versione 0.2 del 25 settembre 2026, invariata). Le scelte tecniche emerse durante lo sviluppo sono in [DECISIONS.md](DECISIONS.md) (DEC-013 e seguenti).
 
-## Last completed phase
+## Architettura (come da SPEC)
 
-Product/design specification completed and validated.
+- Python 3.14 + Flask + SQLite, pagine HTML generate dal server, poco JavaScript.
+- Waitress in un solo processo su `127.0.0.1`, istanza singola, avvio da collegamento senza console.
+- Un solo utilizzatore, nessun login, nessun RBAC, nessun cloud.
+- Google Calendar → CRM in sola lettura (scope `calendar.events.readonly` e `calendar.calendarlist.readonly`).
+- Sette tabelle: Family, StudentLead, Appointment, Offer, FollowUp, Interaction, CalendarExclusion.
+- Viste: Oggi, Appuntamenti, Famiglie, Scheda famiglia + pannello «Dati e collegamento Google».
 
-[SPEC.md](SPEC.md) è la fonte autorevole. È la copia integrale di `KITE-Admissions-Specifica-MVP.md`, versione 0.2 del 25 settembre 2026. L'approvazione e lo stato sopra derivano dalla richiesta esplicita di creazione del repository; le diciture storiche «da validare» nel documento sono conservate senza riscriverlo.
+## Implementato
 
-## Architecture approved
+| Slice | Contenuto |
+|---|---|
+| 0 — Foundations | Schema V1 `STRICT` con FK su ogni connessione, FK composite figlio/famiglia, trigger di congelamento; versione in `PRAGMA user_version`, migrazioni con copia preventiva; ispezione del database e modalità ripristino; protezioni locali (loopback, Host, Origin/Referer, CSRF, CSP); launcher a istanza singola; `scripts/install.ps1` |
+| 1 — Family + StudentLead | Famiglie con recapiti facoltativi, doppioni per telefono/email/etichetta/nome bambino, ricerca e filtri, archiviazione; richieste per figlio e anno, quattro stati con transizioni atomiche in Interaction |
+| 2 — Google Calendar import | Adapter solo GET, OAuth desktop, credenziali DPAPI; aggiornamento con anteprima senza preselezioni, verifica per ID, annullamenti e riattivazioni con una Interaction ciascuno, errori → «Non verificato», ricorrenze, giorni interi, esclusioni |
+| 3 — Appuntamenti | Elenco e dettaglio, suggerimenti e ricerca, collegamento, creazione famiglia dall'evento in transazione, cambio collegamento, preparazione e resoconto separati dai dati Google |
+| 4 — Scheda + cronologia | Scheda completa, note e comunicazioni manuali, cronologia ricavata dalle registrazioni senza copie |
+| 5 — Offerte | Bozza, «Segna come comunicata» idempotente, contenuto congelato (server e database), versioni, proposta corrente, ritiro |
+| 6 — FollowUp + Oggi | Follow-up con esito, regole del prossimo passo, vista Oggi operativa, resoconto con prossimo passo |
+| 7 — Backup/export/restore | Backup automatico giornaliero, manuale e pre-operazione con conservazione; ripristino B2 verificato anche con database assente o danneggiato; verifica post-ripristino; export CSV/JSON; eliminazione definitiva con esclusione degli eventi |
 
-- Flask.
-- SQLite.
-- Applicazione locale nel browser, sul PC Windows.
-- Un solo utilizzatore.
-- Import Google Calendar in sola lettura.
-- Nessun hosting cloud applicativo.
-- Nessun RBAC o login multiutente.
-- Nessuna scrittura verso Calendar.
+## Test
 
-Unica società V1: **LATINA INTERNATIONAL SCHOOL IMPRESA SOCIALE S.R.L.**
+- `.venv\Scripts\python.exe -m pytest`: **165 test verdi** su dati sintetici e cartelle temporanee (schema e vincoli, sicurezza, avvio reale con Waitress, flussi di ogni slice, flusso end-to-end completo).
+- Collaudo manuale sul server reale con calendario di prova da file: import misto, collegamento e creazione dall'evento, visita, offerte con doppio clic, spostamento/annullamento/riattivazione/errore 404, Oggi, backup → modifica → ripristino → verifica dei valori, export, chiusura dall'interfaccia.
+- Avvio da collegamento Windows con `pythonw` (senza console): un'istanza sola in ascolto su `127.0.0.1`, il secondo avvio riapre la stessa, chiusura pulita.
 
-## Approved tables
+## Criteri di accettazione AC01–AC10
 
-1. Family.
-2. StudentLead.
-3. Appointment.
-4. Offer.
-5. FollowUp.
-6. Interaction.
-7. CalendarExclusion.
+Tutti **PASS** con le evidenze elencate nella PR. Due precisazioni:
 
-Sei tabelle operative e una tabella tecnica di esclusioni. Nessuna tabella aggiuntiva AuditEvent.
+- **AC02/AC03** sono verificati con la sorgente simulata e con il contratto HTTP dell'adapter Google (sole richieste GET, paginazione completa, mappatura degli errori). La prova con l'account Google reale richiede le credenziali del proprietario.
+- **AC04** (circa 60 secondi per caso) è misurato come numero di passi: due azioni per collegare o creare la famiglia dall'evento. Il cronometraggio umano resta consigliato.
 
-## Approved operational views
+## Limitazioni note
 
-1. Oggi.
-2. Appuntamenti.
-3. Famiglie.
-4. Scheda famiglia.
+- Nessuna prova ancora eseguita contro l'API Google reale: servono progetto Google Cloud, client OAuth «App desktop» e account con accesso al calendario della segreteria (vedi README). In stato OAuth «Test» Google fa scadere l'autorizzazione dopo 7 giorni.
+- Il database non è cifrato da SQLite: protezione affidata all'account Windows e alla cifratura del disco (SPEC §9.1).
+- Il backup su un supporto esterno è manuale: download del backup dalla pagina Dati.
+- Due processi aperti sullo stesso database da programmi esterni (per esempio un visualizzatore SQLite) impediscono il ripristino finché non vengono chiusi; l'app lo segnala senza toccare i dati.
 
-Pannello tecnico «Dati e collegamento Google»: connessione Google, dati, backup, export e restore.
+## NEXT ACTION (proprietario)
 
-## Final design blockers
+1. Rivedere e unire la PR del branch `v1-implementation` su `main`.
+2. Sul PC di Ionut l'installazione è già pronta: `.venv` nella cartella del repository e collegamento «Avvia KITE Admissions» sul Desktop (`OneDrive\Desktop`). Il database reale nasce al primo avvio in `%LOCALAPPDATA%\KITEAdmissions`. Su un altro PC: `scripts\install.ps1`.
+3. Configurare Google Calendar (README, sezione «Configurazione di Google Calendar») e fare il primo aggiornamento reale: verificare che gli eventi della segreteria compaiano in anteprima e che un import selezionato funzioni.
+4. Scegliere la destinazione della copia esterna periodica dei backup.
 
-None.
+## Vincoli che restano validi
 
-- **B1 persistent transitions: resolved.** Le transizioni importanti sono registrate in Interaction nella stessa transazione del cambiamento, senza duplicazioni; vale anche per appuntamenti non ancora collegati a una famiglia (SPEC §7).
-- **B2 restore with corrupted/missing current DB: resolved.** Il ripristino da backup valido è possibile con database corrente assente, corrotto o non leggibile; la copia preventiva rimane obbligatoria quando il database corrente è sano (SPEC §9.2).
-
-Account/calendario sorgente e destinazione dell'eventuale seconda copia di backup saranno forniti in fase di configurazione: non sono blocchi di progettazione e non vengono inventati qui (SPEC §13).
-
-## Acceptance criteria
-
-I **10 criteri finali AC01–AC10** sono in [SPEC.md, §11](SPEC.md#11-criteri-di-accettazione-v1--dieci-prove-essenziali). Nessuno è dichiarato superato: l'applicazione non è ancora stata costruita.
-
-## Implementation status
-
-No application code has been written.
-
-Slice 0 non avviato. Nessun database applicativo, collegamento Google o ambiente Flask predisposto da questo task. Nessuna Issue o Pull Request aperta per lo sviluppo.
-
-## NEXT ACTION
-
-`SLICE 0 — Foundations`
-
-Leggere prima `SPEC.md`. **Non riprogettare l'applicazione prima dello Slice 0.**
-
-Prima dell'implementazione, delimitare e approvare una singola Issue o equivalente completo con Goal, Acceptance Criteria, Allowed Surface, Forbidden, Verification e Stop Condition, esplicitando eventuali Owner Decisions. Questo punto di ripresa non autorizza da solo l'avvio dello sviluppo.
-
-## Suggested implementation sequence
-
-- Slice 0 — Foundations.
-- Slice 1 — Family + StudentLead.
-- Slice 2 — Google Calendar import.
-- Slice 3 — Appointment + family linking.
-- Slice 4 — Family detail + timeline.
-- Slice 5 — Offers.
-- Slice 6 — FollowUp + Oggi.
-- Slice 7 — Backup/export/restore.
-- Final acceptance criteria gate.
-
-Obiettivi, confini e gate sono nel [piano](docs/IMPLEMENTATION_PLAN.md); non sostituiscono la specifica.
-
-## Important constraints
-
-- Mantenere lo scope minimo.
-- Nessuna funzionalità V2.
-- Nessun supporto multiutente.
-- Nessun deployment cloud o accesso LAN/remoto.
-- Nessuna sincronizzazione Calendar bidirezionale.
-- Nessun dato reale delle famiglie in Git; usare dati sintetici per le prove.
-- Nessuna credenziale, token, database, backup o export in Git.
-- Fermarsi ai criteri della singola attività autorizzata; nessun avvio automatico dello slice successivo.
+- Nessuna funzionalità V2 (SPEC §12), nessun cloud o accesso LAN, nessuna scrittura verso Google.
+- Nessun dato reale delle famiglie, database, backup, export, token o credenziale in Git.

@@ -140,12 +140,18 @@ def run_installed_app_flow(client_config: dict[str, Any], scopes: tuple[str, ...
             host="127.0.0.1", port=0, open_browser=True, authorization_prompt_message="",
             success_message=SUCCESS_MESSAGE, timeout_seconds=timeout_seconds, prompt="consent",
         )
-    except AttributeError as exc:  # nessuna risposta entro il tempo: last_request_uri è None
+    except AttributeError as exc:  # nessuna risposta entro il tempo (WSGITimeoutError)
         raise RuntimeError("Autorizzazione non completata entro il tempo previsto.") from exc
-    granted = set(getattr(credentials, "granted_scopes", None) or credentials.scopes or [])
-    if SCOPES[0] not in granted:
+    if not events_scope_granted(getattr(credentials, "granted_scopes", None) or credentials.scopes):
         raise RuntimeError("Il permesso di lettura degli eventi del calendario non è stato concesso.")
     return credentials.to_json()
+
+
+def events_scope_granted(granted: Any) -> bool:
+    """Gli scope concessi possono arrivare come lista o come stringa separata da spazi."""
+    if isinstance(granted, str):
+        granted = granted.split()
+    return SCOPES[0] in set(granted or [])
 
 
 def build_session(authorized_json: str) -> tuple[Any, Any]:
