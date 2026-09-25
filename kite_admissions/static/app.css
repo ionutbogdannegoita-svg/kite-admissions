@@ -44,6 +44,7 @@ code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 0.88rem; ba
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hidden { display: none !important; }
+.spaced { margin-top: 0.9rem; }
 
 /* Barra superiore */
 .topbar {

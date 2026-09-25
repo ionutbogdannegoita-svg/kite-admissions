@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, lead_badge %}
+{% block title %}{{ family.display_name }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ family.display_name }}
+        {% if family.archived_at %}<span class="badge badge-archived">Archiviata il {{ family.archived_at|d }}</span>{% endif %}
+      </h1>
+      <div class="sub">
+        {% if family.primary_adult_name %}{{ family.primary_adult_name }} · {% endif %}
+        {% if family.contact_source %}fonte: {{ family.contact_source }} · {% endif %}
+        {% if family.first_contact_on %}primo contatto {{ family.first_contact_on|d }}{% endif %}
+      </div>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="{{ url_for('families.edit', family_id=family.id) }}">Modifica dati</a>
+      {% if family.archived_at %}
+        <form method="post" action="{{ url_for('families.unarchive', family_id=family.id) }}">{{ csrf() }}
+          <button type="submit" class="btn btn-secondary">Riporta tra le attive</button></form>
+      {% else %}
+        <form method="post" action="{{ url_for('families.archive', family_id=family.id) }}">{{ csrf() }}
+          <button type="submit" class="btn btn-quiet">Archivia</button></form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div>
+      {% block family_main %}
+      <section class="card" id="richieste">
+        <div class="card-head">
+          <h2>Richieste dei figli <span class="count {{ 'zero' if not leads }}">{{ leads|length }}</span></h2>
+        </div>
+        {% if leads %}
+          <table class="list">
+            <thead><tr><th>Alunno</th><th>Anno · classe</th><th>Stato</th><th></th></tr></thead>
+            <tbody>
+              {% for lead in leads %}
+                <tr>
+                  <td>
+                    <strong>{{ lead.display_name }}</strong>
+                    {% if lead.origin %}<div class="item-meta">Provenienza: {{ lead.origin }}</div>{% endif %}
+                    {% if lead.birth_year %}<div class="item-meta">Nato/a nel {{ lead.birth_year }}</div>{% endif %}
+                    {% if lead.notes %}<div class="item-meta pre">{{ lead.notes }}</div>{% endif %}
+                  </td>
+                  <td>{{ lead.school_year or 'anno non indicato' }}{% if lead.grade %}<div class="item-meta">{{ lead.grade }}</div>{% endif %}</td>
+                  <td>
+                    {{ lead_badge(lead.status) }}
+                    {% if lead.status == 'IN_PAUSA' %}<div class="item-meta">riesame {{ lead.review_on|d }}</div>{% endif %}
+                    {% if lead.status == 'ISCRITTO' %}<div class="item-meta">dal {{ lead.closed_on|d }} · rif. {{ lead.enrollment_ref }}</div>{% endif %}
+                    {% if lead.status == 'NON_PROSEGUE' %}<div class="item-meta">dal {{ lead.closed_on|d }}{% if lead.closure_reason %} · {{ lead.closure_reason }}{% endif %}</div>{% endif %}
+                  </td>
+                  <td class="actions-cell">
+                    <a class="btn btn-small btn-secondary" href="{{ url_for('families.lead_status', family_id=family.id, lead_id=lead.id) }}">Cambia stato</a>
+                    <a class="btn btn-small btn-quiet" href="{{ url_for('families.edit_lead', family_id=family.id, lead_id=lead.id) }}">Modifica</a>
+                    <a class="btn btn-small btn-quiet" href="{{ url_for('families.create_lead', family_id=family.id, da=lead.id) }}" title="Nuova richiesta per un altro anno con i dati essenziali">Altro anno</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">Nessun alunno ancora identificato.</p>
+        {% endif %}
+        <details class="panel">
+          <summary>Aggiungi una richiesta</summary>
+          <div class="panel-body">
+            <form method="post" action="{{ url_for('families.create_lead', family_id=family.id) }}">
+              {{ csrf() }}<input type="hidden" name="new_id" value="{{ new_lead_id }}">
+              <div class="form-grid">
+                <div class="field"><label for="nl_name" class="required">Nome o riferimento provvisorio</label>
+                  <input type="text" id="nl_name" name="display_name" required maxlength="200"></div>
+                <div class="field"><label for="nl_year">Anno scolastico</label>
+                  <select id="nl_year" name="school_year"><option value="">Non indicato</option>
+                    {% for year in years %}<option value="{{ year }}">{{ year }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="nl_grade">Classe o ciclo</label>
+                  <input type="text" id="nl_grade" name="grade" list="grades" maxlength="80">
+                  <datalist id="grades">{% for grade in grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
+                <div class="field"><label for="nl_origin">Provenienza o zona</label>
+                  <input type="text" id="nl_origin" name="origin" maxlength="200"></div>
+              </div>
+              <div class="form-actions"><button type="submit" class="btn">Aggiungi richiesta</button></div>
+            </form>
+          </div>
+        </details>
+      </section>
+      {% endblock %}
+    </div>
+
+    <aside>
+      <section class="card">
+        <h2>Recapiti</h2>
+        {% if not has_contact %}<div class="flash flash-warning">Nessun recapito registrato.</div>{% endif %}
+        <dl class="facts">
+          {% if family.primary_adult_name or family.primary_phone or family.primary_email %}
+            <dt>Adulto</dt><dd>{{ family.primary_adult_name or '—' }}</dd>
+            {% if family.primary_phone %}<dt>Telefono</dt><dd>{{ family.primary_phone }}</dd>{% endif %}
+            {% if family.primary_email %}<dt>Email</dt><dd>{{ family.primary_email }}</dd>{% endif %}
+          {% endif %}
+          {% if family.secondary_adult_name or family.secondary_phone or family.secondary_email %}
+            <dt>Secondo adulto</dt><dd>{{ family.secondary_adult_name or '—' }}</dd>
+            {% if family.secondary_phone %}<dt>Telefono</dt><dd>{{ family.secondary_phone }}</dd>{% endif %}
+            {% if family.secondary_email %}<dt>Email</dt><dd>{{ family.secondary_email }}</dd>{% endif %}
+          {% endif %}
+        </dl>
+        {% if family.preliminary_notes %}
+          <h3>Note preliminari</h3>
+          <p class="pre">{{ family.preliminary_notes }}</p>
+        {% endif %}
+        <p class="item-meta">Creata {{ family.created_at|dt }} · aggiornata {{ family.updated_at|dt }} ({{ family.updated_by }})</p>
+      </section>
+      {% block family_side %}{% endblock %}
+    </aside>
+  </div>
+{% endblock %}
