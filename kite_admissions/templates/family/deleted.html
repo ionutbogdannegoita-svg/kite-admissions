@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Dossier eliminato{% endblock %}
+{% block content %}
+  <section class="card narrow">
+    <h1>Dossier «{{ label }}» eliminato</h1>
+    <p>Eliminati da questo PC:</p>
+    <ul>{% for name, count in counts.items() %}<li>{{ name|capitalize }}: {{ count }}</li>{% endfor %}</ul>
+    <p class="small">Copia di sicurezza creata prima dell'eliminazione: <code>{{ backup_name }}</code>.</p>
+    <div class="flash flash-info">Google Calendar non è stato modificato: gli eventi restano nel calendario e non verranno reimportati.
+      Backup precedenti ed export possono ancora contenere il dossier; hanno una conservazione separata.</div>
+    <p><a class="btn" href="{{ url_for('families.index') }}">Torna alle famiglie</a></p>
+  </section>
+{% endblock %}

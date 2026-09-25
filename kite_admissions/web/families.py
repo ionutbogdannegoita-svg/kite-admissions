@@ -8,6 +8,7 @@ from flask import Blueprint, abort, redirect, render_template, request, url_for
 
 from ..schema import FOLLOWUP_ACTIONS, MANUAL_INTERACTIONS
 from ..services import appointments as appointment_service
+from ..services import backups
 from ..services import families as family_service
 from ..services import followups as followup_service
 from ..services import today as today_service
@@ -226,6 +227,27 @@ def archive(family_id: str):
     if family_service.set_archived(get_db(), family_id, True, now=state().now()):
         flash_ok("Famiglia archiviata: resta consultabile dal filtro «Archiviate».")
     return redirect(url_for("families.detail", family_id=family_id))
+
+
+@bp.route("/<family_id>/elimina", methods=["GET", "POST"])
+def delete(family_id: str):
+    family = _family_or_404(family_id)
+    db = get_db()
+    counts = family_service.dossier_counts(db, family_id)
+    if request.method == "GET":
+        return render_template("family/delete.html", active="families", family=family, counts=counts, errors=[])
+    typed = request.form.get("confirm_label", "")
+    if typed.strip() != family["display_name"].strip():
+        return render_template("family/delete.html", active="families", family=family, counts=counts,
+                               errors=["Per confermare digita esattamente l'etichetta della famiglia."]), 422
+    try:
+        backup = state().preop_backup("eliminazione")
+    except (backups.BackupError, OSError) as exc:
+        return render_template("family/delete.html", active="families", family=family, counts=counts,
+                               errors=[f"Copia di sicurezza non riuscita: eliminazione annullata ({exc})."]), 500
+    removed = family_service.delete_family(db, family_id, typed_label=typed, now=state().now())
+    return render_template("family/deleted.html", active="families", label=family["display_name"], counts=removed,
+                           backup_name=backup.name)
 
 
 @bp.post("/<family_id>/riattiva")

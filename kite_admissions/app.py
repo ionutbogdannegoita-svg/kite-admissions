@@ -6,11 +6,12 @@ import logging
 import os
 import secrets
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable
 
-from flask import Flask, g, jsonify, redirect, render_template, request, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, request, url_for
 from werkzeug.exceptions import HTTPException
 
 from . import APP_ID, APP_NAME, SCHOOL_NAME, __version__
@@ -41,7 +42,19 @@ RECOVERY_ENDPOINTS = frozenset({
     "panel.open_folder",
     "panel.shutdown",
 })
-GATE_EXEMPT_ENDPOINTS = frozenset({"static", "health", "panel.restore_run"})
+# Operazioni esclusive: chiudono il gate da sole e attendono le altre richieste.
+GATE_EXEMPT_ENDPOINTS = frozenset({"static", "health", "panel.restore_run", "panel.create_empty_database"})
+# Modifiche ammesse durante la verifica post-ripristino (SPEC §9.2): verifica, cancellazioni, copie.
+POST_RESTORE_ENDPOINTS = frozenset({
+    "panel.restore_review_done",
+    "panel.restore_run",
+    "panel.backup_now",
+    "panel.export_run",
+    "panel.open_folder",
+    "panel.shutdown",
+    "families.delete",
+    "families.archive",
+})
 
 _ERROR_MESSAGES = {
     400: "Richiesta non valida.",
@@ -78,6 +91,7 @@ class AppState:
         self.recovery: Recovery | None = None
         self.shutdown_callback: Callable[[], None] | None = None
         self.import_runner = ImportRunner()
+        self._backup_lock = threading.Lock()
         self.google = GoogleConnection(
             paths,
             store=services.get("protected_store"),
@@ -142,8 +156,42 @@ class AppState:
         self.recovery = Recovery(status, inspection.detail)
         log.warning("Avvio in modalità ripristino: %s", status)
 
+    def auto_backup(self) -> str | None:
+        """Copia giornaliera aggiornata dopo un salvataggio concluso (SPEC §9.2).
+
+        Restituisce il messaggio d'errore, oppure None se la copia è riuscita. Un errore non
+        annulla il dato già salvato.
+        """
+        if self.recovery is not None:
+            return None
+        with self._backup_lock:
+            now = self.now()
+            try:
+                info = backups.create_backup(self.paths, self.settings.load(), backups.KIND_AUTO, now=now,
+                                             replace=True)
+                backups.apply_retention(self.paths, now)
+            except (backups.BackupError, OSError, sqlite3.Error) as exc:
+                message = str(exc) or exc.__class__.__name__
+                log.warning("Backup automatico non riuscito: %s", exc.__class__.__name__)
+
+                def failed(data: dict[str, Any]) -> None:
+                    last = dict(data.get("last_backup") or {})
+                    last.update(error=message, error_at=backups.to_iso(now))
+                    data["last_backup"] = last
+
+                self.settings.update(failed)
+                return message
+
+            def succeeded(data: dict[str, Any]) -> None:
+                data["last_backup"] = {"at": info.created_at, "name": info.name, "kind": info.kind,
+                                       "error": None, "error_at": None}
+
+            self.settings.update(succeeded)
+            return None
+
     def after_calendar_write(self) -> None:
-        """Dopo un aggiornamento o un import da Calendar."""
+        """A fine import da Calendar: aggiorna la copia giornaliera."""
+        self.auto_backup()
 
     def request_shutdown(self) -> None:
         if self.shutdown_callback is not None:
@@ -201,10 +249,19 @@ def _register_hooks(app: Flask, state: AppState) -> None:
         g.gate_entered = True
         if state.recovery is not None and request.endpoint not in RECOVERY_ENDPOINTS:
             return redirect(url_for("panel.recovery"))
+        if (request.method == "POST" and request.endpoint not in POST_RESTORE_ENDPOINTS
+                and state.settings.load().get("post_restore")):
+            flash("Dopo il ripristino completa prima la verifica indicata: le modifiche sono sospese.", "error")
+            return redirect(url_for("panel.restore_review"))
         return None
 
     @app.after_request
-    def headers(response):
+    def after(response):
+        database = g.get("db")
+        if database is not None and database.committed_writes and response.status_code < 500:
+            error = state.auto_backup()
+            if error:
+                flash(f"Dati salvati, backup non riuscito: {error}", "warning")
         return apply_security_headers(response, static=request.endpoint == "static")
 
     @app.teardown_request

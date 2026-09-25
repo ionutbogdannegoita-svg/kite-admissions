@@ -186,6 +186,13 @@ def read_manifest(path: Path) -> dict[str, Any]:
     return manifest
 
 
+def read_manifest_safe(path: Path) -> dict[str, Any]:
+    try:
+        return read_manifest(path)
+    except BackupError:
+        return {}
+
+
 def list_backups(paths: Paths) -> list[BackupInfo]:
     """Backup presenti, dal più recente. I file illeggibili sono elencati con l'errore."""
     found: list[BackupInfo] = []
@@ -221,6 +228,32 @@ def find_backup(paths: Paths, kind: str, name: str) -> Path:
     if path.parent != folder or not path.is_file():
         raise BackupError("Backup non trovato.")
     return path
+
+
+RETENTION_DAYS = 30
+
+
+def apply_retention(paths: Paths, now: datetime, days: int = RETENTION_DAYS) -> list[Path]:
+    """Copie automatiche e pre-operazione oltre 30 giorni eliminate, mai l'ultima copia valida.
+
+    Le copie manuali sono gestite esplicitamente da Ionut e non vengono toccate.
+    """
+    from datetime import timedelta
+
+    valid = [item for item in list_backups(paths) if item.error is None and item.created_at]
+    if not valid:
+        return []
+    newest = max(valid, key=lambda item: item.created_at)
+    cutoff = to_iso(now - timedelta(days=days))
+    removed = []
+    for item in valid:
+        if item.kind in (KIND_AUTO, KIND_PREOP) and item.created_at < cutoff and item.path != newest.path:
+            try:
+                item.path.unlink()
+                removed.append(item.path)
+            except OSError:
+                pass
+    return removed
 
 
 @dataclass

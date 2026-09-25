@@ -1,11 +1,52 @@
 {% extends "base.html" %}
+{% from "_macros.html" import csrf %}
 {% block title %}Ripristino{% endblock %}
 {% block content %}
-  <h1>Ripristino dei dati</h1>
+  <div class="page-head">
+    <div>
+      <h1>Ripristino dei dati</h1>
+      <div class="sub">Database: <code>{{ paths.db_path }}</code></div>
+    </div>
+  </div>
   {% if recovery %}
     <div class="flash flash-error">{{ recovery.detail or "Il database non è utilizzabile." }}</div>
   {% else %}
-    <p>Il database è utilizzabile.</p>
+    <div class="flash flash-ok">Il database è utilizzabile.</div>
   {% endif %}
-  <p>Database: <code>{{ paths.db_path }}</code></p>
+
+  <section class="card">
+    <h2>Backup disponibili</h2>
+    <table class="list compact">
+      <thead><tr><th>Creato</th><th>Tipo</th><th class="num">Famiglie</th><th></th></tr></thead>
+      <tbody>
+        {% for item in backups %}
+          <tr>
+            <td>{% if item.error %}<span class="badge badge-danger">illeggibile</span> {{ item.name }}{% else %}{{ item.created_at|dt }}{% endif %}</td>
+            <td>{{ item.kind }}{% if item.operation %} · {{ item.operation }}{% endif %}</td>
+            <td class="num">{{ item.counts.get('Family', '') }}</td>
+            <td class="actions-cell">{% if not item.error %}<a class="btn btn-small" href="{{ url_for('panel.restore_confirm', kind=item.kind, name=item.name) }}">Ripristina…</a>{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="empty">Nessun backup trovato in <code>{{ paths.backups_dir }}</code>. Se hai una copia su un supporto esterno, mettila in <code>backups\manuali</code> e ricarica.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ url_for('panel.open_folder') }}" class="actions">
+      {{ csrf() }}<input type="hidden" name="next" value="{{ url_for('panel.recovery') }}"><input type="hidden" name="folder" value="backup">
+      <button type="submit" class="btn btn-quiet btn-small">Apri cartella backup</button>
+    </form>
+  </section>
+
+  {% if recovery %}
+    <section class="card danger-zone">
+      <h2>Oppure: nuovo database vuoto</h2>
+      <p class="small">Il file attuale (se presente) viene conservato nella cartella <code>backups\preservati</code>; poi si riparte da un database vuoto.</p>
+      <form method="post" action="{{ url_for('panel.create_empty_database') }}" class="actions">
+        {{ csrf() }}
+        <label class="small" for="confirm_new">Digita NUOVO</label>
+        <input type="text" id="confirm_new" name="confirm_text" required autocomplete="off">
+        <button type="submit" class="btn btn-danger btn-small">Crea database vuoto</button>
+      </form>
+    </section>
+  {% endif %}
 {% endblock %}

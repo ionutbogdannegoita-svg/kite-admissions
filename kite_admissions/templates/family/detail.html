@@ -23,6 +23,7 @@
         <form method="post" action="{{ url_for('families.archive', family_id=family.id) }}">{{ csrf() }}
           <button type="submit" class="btn btn-quiet">Archivia</button></form>
       {% endif %}
+      <a class="btn btn-quiet" href="{{ url_for('families.delete', family_id=family.id) }}">Elimina definitivamente…</a>
     </div>
   </div>
 

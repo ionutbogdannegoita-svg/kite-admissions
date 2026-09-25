@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Verifica dopo il ripristino{% endblock %}
+{% block content %}
+  <div class="page-head"><div><h1>Verifica dopo il ripristino</h1></div></div>
+  {% if review %}
+    <section class="card alert">
+      <p>Ripristinato il <strong>{{ review.restored_at|dt }}</strong> dal backup del <strong>{{ review.backup_created_at|dt }}</strong> ({{ review.backup_name }}).</p>
+      {% if review.preop_backup %}<p class="small">Copia del database precedente: <code>{{ review.preop_backup }}</code> (backup pre-operazione).</p>{% endif %}
+      {% if review.preserved %}<p class="small">Il database danneggiato è stato conservato in: {% for path in review.preserved %}<code>{{ path }}</code> {% endfor %}</p>{% endif %}
+      {% if review.preserve_error %}<div class="flash flash-warning">{{ review.preserve_error }}</div>{% endif %}
+      <h2>Da verificare prima di riprendere</h2>
+      <ul>
+        <li>I dati inseriti dopo il {{ review.backup_created_at|dt }} non ci sono più: se servono, vanno reinseriti.</li>
+        <li>Le cancellazioni fatte dopo quella data sono annullate: le famiglie eliminate o i dati rimossi possono essere riapparsi. Se vanno eliminati di nuovo, fallo adesso dalla scheda (Elimina definitivamente).</li>
+        <li>Lo stato di Google Calendar va ricontrollato con un nuovo aggiornamento dopo la verifica.</li>
+      </ul>
+      {% if review.reappeared %}
+        <h3>Famiglie presenti nel backup ma non nel database sostituito</h3>
+        <ul>{% for label in review.reappeared %}<li>{{ label }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if review.missing %}
+        <h3>Famiglie del database sostituito che non sono nel backup</h3>
+        <ul>{% for label in review.missing %}<li>{{ label }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if review.previous_state not in ['ok', 'needs_migration'] %}
+        <p class="small muted">Il database precedente non era leggibile: non è possibile elencare le differenze.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('panel.restore_review_done') }}" class="form-actions">
+        {{ csrf() }}
+        <label class="check"><input type="checkbox" name="checked" value="1" required> Ho verificato cancellazioni e dati mancanti</label>
+        <button type="submit" class="btn">Riprendi l'uso normale</button>
+      </form>
+    </section>
+  {% else %}
+    <section class="card"><p>Nessuna verifica in sospeso.</p></section>
+  {% endif %}
+{% endblock %}

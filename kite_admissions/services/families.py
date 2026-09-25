@@ -237,6 +237,56 @@ def set_archived(db: Database, family_id: str, archived: bool, *, now: datetime)
     return True
 
 
+def dossier_counts(db: Database, family_id: str) -> dict[str, int]:
+    """Quanti dati locali coinvolge l'eliminazione definitiva (SPEC §9.4)."""
+    appointment_ids = [row[0] for row in db.all("SELECT id FROM Appointment WHERE family_id = ?", (family_id,))]
+    marks = ", ".join("?" for _ in appointment_ids) or "NULL"
+    return {
+        "richieste": db.scalar("SELECT count(*) FROM StudentLead WHERE family_id = ?", (family_id,)),
+        "appuntamenti": len(appointment_ids),
+        "resoconti": db.scalar(
+            "SELECT count(*) FROM Appointment WHERE family_id = ? AND (visit_outcome IS NOT NULL "
+            "OR visit_report IS NOT NULL OR local_observations IS NOT NULL)", (family_id,)),
+        "offerte": db.scalar("SELECT count(*) FROM Offer WHERE family_id = ?", (family_id,)),
+        "follow-up": db.scalar("SELECT count(*) FROM FollowUp WHERE family_id = ?", (family_id,)),
+        "attività in cronologia": db.scalar(
+            f"SELECT count(*) FROM Interaction WHERE family_id = ? OR appointment_id IN ({marks})",
+            [family_id, *appointment_ids]),
+    }
+
+
+def delete_family(db: Database, family_id: str, *, typed_label: str, now: datetime) -> dict[str, int]:
+    """Eliminazione definitiva del dossier locale, in una transazione.
+
+    Gli eventi Calendar collegati entrano in CalendarExclusion (FAMILY_DELETED): gli stessi eventi
+    non vengono reimportati né riproposti. Google Calendar non viene modificato. La copia
+    pre-operazione è responsabilità del chiamante e deve riuscire prima di questa funzione.
+    """
+    with db.transaction():
+        family = get_family(db, family_id)
+        if typed_label.strip() != family["display_name"].strip():
+            raise ValidationError("Per confermare digita esattamente l'etichetta della famiglia.", "confirm_label")
+        counts = dossier_counts(db, family_id)
+        appointments = db.all("SELECT id, calendar_id, google_event_id FROM Appointment WHERE family_id = ?",
+                              (family_id,))
+        ids = [row["id"] for row in appointments]
+        marks = ", ".join("?" for _ in ids) or "NULL"
+        db.execute(f"DELETE FROM Interaction WHERE family_id = ? OR appointment_id IN ({marks})", [family_id, *ids])
+        db.execute("DELETE FROM FollowUp WHERE family_id = ?", (family_id,))
+        db.execute("DELETE FROM Offer WHERE family_id = ?", (family_id,))
+        for row in appointments:
+            db.execute(
+                "INSERT INTO CalendarExclusion (calendar_id, google_event_id, reason, excluded_at) "
+                "VALUES (?, ?, 'FAMILY_DELETED', ?) ON CONFLICT (calendar_id, google_event_id) "
+                "DO UPDATE SET reason = 'FAMILY_DELETED', excluded_at = excluded.excluded_at",
+                (row["calendar_id"], row["google_event_id"], stamp(now)),
+            )
+        db.execute("DELETE FROM Appointment WHERE family_id = ?", (family_id,))
+        db.execute("DELETE FROM StudentLead WHERE family_id = ?", (family_id,))
+        db.execute("DELETE FROM Family WHERE id = ?", (family_id,))
+    return counts
+
+
 def search_families(
     db: Database,
     *,
