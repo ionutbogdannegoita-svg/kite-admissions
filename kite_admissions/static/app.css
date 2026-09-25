@@ -239,6 +239,10 @@ details.panel > .panel-body { padding: 0.2rem 0.9rem 0.9rem; }
 .inline-details input { width: 5.5rem; }
 .actions label input[type=number] { width: 5.5rem; }
 
+.compact-card { padding: 0.6rem 1rem; }
+.item-side input[type=text] { width: 12rem; padding: 0.25rem 0.45rem; font-size: 0.86rem; }
+.item-side details.panel { margin: 0; }
+.item-side { flex-wrap: wrap; justify-content: flex-end; }
 ol.steps { padding-left: 1.2rem; margin: 0 0 0.8rem; }
 ol.steps li { margin-bottom: 0.7rem; }
 .item-list-row { display: flex; gap: 0.6rem; align-items: center; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--line); }

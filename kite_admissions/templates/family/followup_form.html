@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% block title %}Modifica follow-up{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Modifica follow-up</h1>
+      <div class="sub"><a href="{{ url_for('families.detail', family_id=family.id) }}#follow-up">{{ family.display_name }}</a></div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+  <form method="post" class="card">
+    {{ csrf() }}<input type="hidden" name="revision" value="{{ followup.revision }}">
+    <div class="form-grid">
+      <div class="field"><label for="action" class="required">Azione</label>
+        <select id="action" name="action">{% for value in actions %}<option value="{{ value }}" {{ 'selected' if form.action == value }}>{{ value|label }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="due_on" class="required">Entro il</label>
+        <input type="date" id="due_on" name="due_on" value="{{ form.due_on or '' }}" required></div>
+      <div class="field"><label for="student_lead_id">Riguarda</label>
+        <select id="student_lead_id" name="student_lead_id"><option value="">Tutta la famiglia</option>
+          {% for lead in leads %}<option value="{{ lead.id }}" {{ 'selected' if form.student_lead_id == lead.id }}>{{ lead.display_name }}</option>{% endfor %}</select></div>
+      <div class="field wide"><label for="note">Nota</label>
+        <input type="text" id="note" name="note" value="{{ form.note or '' }}" maxlength="2000"></div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Salva</button>
+      <a href="{{ url_for('families.detail', family_id=family.id) }}#follow-up">Annulla</a>
+    </div>
+  </form>
+{% endblock %}

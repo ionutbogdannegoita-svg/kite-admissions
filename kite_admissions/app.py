@@ -258,10 +258,11 @@ def _register_filters(app: Flask) -> None:
 
 
 def _register_blueprints(app: Flask) -> None:
-    from .web import appointments, families, offers, panel, today
+    from .web import appointments, families, followups, offers, panel, today
 
     app.register_blueprint(today.bp)
     app.register_blueprint(appointments.bp)
     app.register_blueprint(families.bp)
     app.register_blueprint(offers.bp)
+    app.register_blueprint(followups.bp)
     app.register_blueprint(panel.bp)

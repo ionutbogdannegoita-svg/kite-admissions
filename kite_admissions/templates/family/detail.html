@@ -88,6 +88,8 @@
       </section>
       {% endblock %}
 
+      {% include "family/_followups.html" %}
+
       <section class="card" id="appuntamenti">
         <div class="card-head">
           <h2>Appuntamenti e visite <span class="count {{ 'zero' if not appointments }}">{{ appointments|length }}</span></h2>
@@ -163,6 +165,16 @@
     </div>
 
     <aside>
+      <section class="card {{ 'alert' if next_step.missing }}">
+        <h2>Prossimo passo</h2>
+        {% if next_step.closed %}
+          <p class="muted">Tutte le richieste sono chiuse.</p>
+        {% elif next_step.missing %}
+          <div class="flash flash-error">Senza prossimo passo{% if next_step.uncovered_leads %}: {{ next_step.uncovered_leads|join(', ') }}{% endif %}.</div>
+          <p class="small">Aggiungi un follow-up o fai fissare una visita in Google Calendar.</p>
+        {% endif %}
+        {% if next_step.label %}<p><strong>{{ next_step.label }}</strong></p>{% endif %}
+      </section>
       <section class="card">
         <h2>Recapiti</h2>
         {% if not has_contact %}<div class="flash flash-warning">Nessun recapito registrato.</div>{% endif %}

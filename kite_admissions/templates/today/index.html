@@ -1,6 +1,153 @@
 {% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% from "_appt.html" import when, status_badges, link_state %}
 {% block title %}Oggi{% endblock %}
+
+{% macro followup_item(f, today_iso) -%}
+  <li>
+    <div class="item-main">
+      <span class="title"><a href="{{ url_for('families.detail', family_id=f.family_id) }}#follow-up">{{ f.family_name }}</a></span>
+      · {{ f.action|label }}{% if f.lead_name %} · {{ f.lead_name }}{% endif %}
+      {% if f.due_on < today_iso %}<span class="badge badge-scaduto">Scaduto il {{ f.due_on|d }}</span>{% else %}<span class="badge badge-info">Oggi</span>{% endif %}
+      {% if f.action == 'RICHIAMARE' %}
+        <div class="item-meta">{{ f.primary_adult_name or '' }} {{ f.primary_phone or f.secondary_phone or 'nessun telefono in scheda' }}</div>
+      {% endif %}
+      {% if f.note %}<div class="item-meta">{{ f.note }}</div>{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('followups.complete', family_id=f.family_id, followup_id=f.id) }}" class="item-side">
+      {{ csrf() }}<input type="hidden" name="revision" value="{{ f.revision }}"><input type="hidden" name="next" value="/">
+      <input type="text" name="outcome" placeholder="Esito (facoltativo)" maxlength="1000" aria-label="Esito">
+      <button type="submit" class="btn btn-small btn-secondary">Fatto</button>
+    </form>
+  </li>
+{%- endmacro %}
+
 {% block content %}
-  <h1>Oggi</h1>
-  <p class="muted">Le sezioni operative arrivano con i prossimi slice.</p>
+  <div class="page-head">
+    <div>
+      <h1>Oggi</h1>
+      <div class="sub">{{ today_label }}</div>
+    </div>
+    {% include "_refresh_form.html" %}
+  </div>
+
+  <section class="card compact-card">
+    {% include "_calendar_status.html" %}
+  </section>
+
+  <div class="grid-halves">
+    <div>
+      <section class="card">
+        <div class="card-head"><h2>Appuntamenti di oggi <span class="count {{ 'zero' if not view.today_appointments }}">{{ view.today_appointments|length }}</span></h2></div>
+        {% if view.today_appointments %}
+          <ul class="item-list">
+            {% for a in view.today_appointments %}
+              <li>
+                <div class="item-main">
+                  <span class="when">{{ a.src_start_at|t if a.src_start_at else 'giorno' }}</span>
+                  <a href="{{ url_for('appointments.detail', appointment_id=a.id) }}" class="title">{{ a.src_title or '(senza titolo)' }}</a>
+                  <div class="item-meta">{{ link_state(a) }} {{ status_badges(a) }}
+                    {% if not a.src_start_at %}<span class="badge badge-warn">Orario da verificare</span>{% endif %}</div>
+                </div>
+                {% if a.visit_outcome %}<span class="badge badge-{{ a.visit_outcome|lower }}">{{ a.visit_outcome|label }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Nessun appuntamento oggi.</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Da richiamare <span class="count {{ 'zero' if not view.callbacks else 'warn' }}">{{ view.callbacks|length }}</span></h2></div>
+        {% if view.callbacks %}
+          <ul class="item-list">{% for f in view.callbacks %}{{ followup_item(f, today_iso) }}{% endfor %}</ul>
+        {% else %}<p class="empty">Nessun richiamo scaduto o previsto per oggi.</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Follow-up scaduti e di oggi <span class="count {{ 'zero' if not view.due_other else 'warn' }}">{{ view.due_other|length }}</span></h2></div>
+        {% if view.due_other %}
+          <ul class="item-list">{% for f in view.due_other %}{{ followup_item(f, today_iso) }}{% endfor %}</ul>
+        {% else %}<p class="empty">Nessun altro follow-up in scadenza.</p>{% endif %}
+      </section>
+
+      {% if view.reviews %}
+        <section class="card">
+          <div class="card-head"><h2>Riesami di richieste in pausa <span class="count warn">{{ view.reviews|length }}</span></h2></div>
+          <ul class="item-list">
+            {% for lead in view.reviews %}
+              <li><div class="item-main"><a class="title" href="{{ url_for('families.detail', family_id=lead.family_id) }}#richieste">{{ lead.family_name }}</a>
+                · {{ lead.display_name }} <span class="badge {{ 'badge-scaduto' if lead.review_on < today_iso else 'badge-info' }}">Riesame {{ lead.review_on|d }}</span></div>
+                <a class="btn btn-small btn-secondary" href="{{ url_for('families.lead_status', family_id=lead.family_id, lead_id=lead.id) }}">Aggiorna stato</a></li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+    </div>
+
+    <div>
+      <section class="card">
+        <div class="card-head"><h2>Eventi da collegare <span class="count {{ 'zero' if not view.to_link else 'warn' }}">{{ view.to_link|length }}</span></h2></div>
+        {% if view.to_link %}
+          <ul class="item-list">
+            {% for a in view.to_link %}
+              <li><div class="item-main"><a class="title" href="{{ url_for('appointments.detail', appointment_id=a.id) }}">{{ a.src_title or '(senza titolo)' }}</a>
+                <div class="item-meta">{{ when(a) }} {{ status_badges(a) }}</div></div>
+                <a class="btn btn-small" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#locale">Collega</a></li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Tutti gli eventi importati sono collegati.</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Resoconti da completare <span class="count {{ 'zero' if not view.reports_missing else 'warn' }}">{{ view.reports_missing|length }}</span></h2></div>
+        {% if view.reports_missing %}
+          <ul class="item-list">
+            {% for a in view.reports_missing %}
+              <li><div class="item-main"><a class="title" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#resoconto">{{ a.src_title or '(senza titolo)' }}</a>
+                <div class="item-meta">{{ when(a) }} · {{ link_state(a) }}</div></div>
+                <a class="btn btn-small btn-secondary" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#resoconto">Resoconto</a></li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Nessun resoconto in sospeso.</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Pratiche senza prossimo passo <span class="count {{ 'zero' if not view.without_step else 'danger' }}">{{ view.without_step|length }}</span></h2></div>
+        {% if view.without_step %}
+          <ul class="item-list">
+            {% for item in view.without_step %}
+              <li><div class="item-main"><a class="title" href="{{ url_for('families.detail', family_id=item.family_id) }}#follow-up">{{ item.display_name }}</a>
+                <div class="item-meta">{% if item.uncovered %}Senza azione: {{ item.uncovered|join(', ') }}{% else %}Nessun alunno identificato e nessuna azione prevista{% endif %}{% if item.phone %} · {{ item.phone }}{% endif %}</div></div>
+                <a class="btn btn-small btn-secondary" href="{{ url_for('families.detail', family_id=item.family_id) }}#follow-up">Pianifica</a></li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Ogni pratica aperta ha un prossimo passo.</p>{% endif %}
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Prossimi 7 giorni <span class="count {{ 'zero' if not view.upcoming }}">{{ view.upcoming|length }}</span></h2></div>
+        {% if view.upcoming %}
+          <ul class="item-list">
+            {% for a in view.upcoming %}
+              <li><div class="item-main"><a class="title" href="{{ url_for('appointments.detail', appointment_id=a.id) }}">{{ a.src_title or '(senza titolo)' }}</a>
+                <div class="item-meta">{{ when(a) }} · {{ link_state(a) }} {{ status_badges(a) }}</div></div></li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Nessun appuntamento nei prossimi giorni.</p>{% endif %}
+      </section>
+
+      {% if view.not_verified %}
+        <section class="card alert">
+          <div class="card-head"><h2>Appuntamenti non verificati <span class="count warn">{{ view.not_verified|length }}</span></h2></div>
+          <p class="small">L'ultimo controllo con Google non è riuscito: restano visibili ma non contano come prossimo passo certo.</p>
+          <ul class="item-list">
+            {% for a in view.not_verified %}
+              <li><div class="item-main"><a class="title" href="{{ url_for('appointments.detail', appointment_id=a.id) }}">{{ a.src_title or '(senza titolo)' }}</a>
+                <div class="item-meta">{{ when(a) }} · {{ a.verification_error }}</div></div></li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+    </div>
+  </div>
 {% endblock %}

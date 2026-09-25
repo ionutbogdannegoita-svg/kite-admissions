@@ -23,6 +23,7 @@ from .common import (
     StaleWriteError,
     ValidationError,
     clean,
+    new_id,
     stamp,
 )
 
@@ -255,12 +256,27 @@ def parse_report(form: Mapping[str, Any], now: datetime) -> dict[str, Any]:
 
 
 def save_report(db: Database, appointment_id: str, values: Mapping[str, Any], *, revision: int,
-                now: datetime) -> None:
-    """Resoconto della visita: fatto registrato da Ionut, mai dedotto dal calendario (SPEC §4.3)."""
+                now: datetime, next_followup: Mapping[str, Any] | None = None,
+                followup_id: str | None = None) -> None:
+    """Resoconto della visita: fatto registrato da Ionut, mai dedotto dal calendario (SPEC §4.3).
+
+    Un eventuale prossimo passo (follow-up) si salva nella stessa transazione.
+    """
+    from . import followups as followup_service
+
     with db.transaction():
+        if followup_id and db.one("SELECT 1 FROM FollowUp WHERE id = ?", (followup_id,)):
+            return  # invio ripetuto dello stesso modulo: già salvato
         current = get_appointment(db, appointment_id)
         _check_revision(current, revision)
         _update_local(db, appointment_id, dict(values), revision, now)
+        if next_followup:
+            if current["family_id"] is None:
+                raise ValidationError("Collega prima una famiglia per pianificare il prossimo passo.")
+            followup = dict(next_followup)
+            followup["student_lead_id"] = followup.get("student_lead_id") or current["student_lead_id"]
+            followup_service.insert_followup(db, current["family_id"], followup, followup_id=followup_id or new_id(),
+                                             now=now)
 
 
 def date_discrepancy(appointment: Mapping[str, Any]) -> bool:

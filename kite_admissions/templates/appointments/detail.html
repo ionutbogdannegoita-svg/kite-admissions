@@ -162,8 +162,23 @@
               <textarea id="local_observations" name="local_observations" maxlength="4000">{{ a.local_observations or '' }}</textarea>
               <span class="hint">Niente dati sensibili superflui: salute, reddito, documenti, vicende familiari.</span></div>
           </div>
+          {% if a.family_id %}
+            <fieldset class="spaced">
+              <legend>Prossimo passo (facoltativo, salvato insieme al resoconto)</legend>
+              <input type="hidden" name="next_new_id" value="{{ new_uuid() }}">
+              <div class="form-grid">
+                <div class="field"><label for="next_action">Azione</label>
+                  <select id="next_action" name="next_action"><option value="">Nessuna</option>
+                    {% for value in followup_actions %}<option value="{{ value }}">{{ value|label }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="next_due_on">Entro il</label>
+                  <input type="date" id="next_due_on" name="next_due_on" value="{{ today_iso }}"></div>
+                <div class="field wide"><label for="next_note">Nota</label>
+                  <input type="text" id="next_note" name="next_note" maxlength="2000"></div>
+              </div>
+            </fieldset>
+          {% endif %}
           <div class="form-actions"><button type="submit" class="btn">Salva resoconto</button>
-            {% if a.family_id %}<a href="{{ url_for('families.detail', family_id=a.family_id) }}">Prossimo passo e offerte nella scheda famiglia</a>{% endif %}</div>
+            {% if a.family_id %}<a href="{{ url_for('families.detail', family_id=a.family_id) }}#offerte">Condizioni comunicate: proposte nella scheda famiglia</a>{% endif %}</div>
         </form>
       </section>
 

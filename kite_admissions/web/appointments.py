@@ -7,9 +7,11 @@ from datetime import timedelta
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
 from ..gcal.source import SourceError
+from ..schema import FOLLOWUP_ACTIONS
 from ..services import appointments as appointment_service
 from ..services import calendar_import
 from ..services import families as family_service
+from ..services import followups as followup_service
 from ..services import leads as lead_service
 from ..services.common import (
     AlreadySavedError,
@@ -95,6 +97,8 @@ def detail(appointment_id: str):
         has_report=appointment_service.has_report(appointment),
         discrepancy=appointment_service.date_discrepancy(appointment),
         outcomes=appointment_service.OUTCOMES,
+        followup_actions=FOLLOWUP_ACTIONS,
+        today_iso=rome_today(state().now()).isoformat(),
         interactions=db.all("SELECT * FROM Interaction WHERE appointment_id = ? ORDER BY occurred_at DESC, rowid DESC",
                             (appointment_id,)),
     )
@@ -237,13 +241,18 @@ def preparation(appointment_id: str):
 @bp.post("/<appointment_id>/resoconto")
 def report(appointment_id: str):
     _appointment_or_404(appointment_id)
+    next_followup = None
     try:
         values = appointment_service.parse_report(request.form, state().now())
-        appointment_service.save_report(get_db(), appointment_id, values, revision=_revision(), now=state().now())
+        if request.form.get("next_action"):
+            next_followup = followup_service.parse_followup(request.form, prefix="next_")
+        appointment_service.save_report(get_db(), appointment_id, values, revision=_revision(), now=state().now(),
+                                        next_followup=next_followup,
+                                        followup_id=creation_id(request.form.get("next_new_id")))
     except (ValidationError, StaleWriteError) as exc:
         flash_error(exc.message)
         return _to_detail(appointment_id, "#resoconto")
-    flash_ok("Resoconto salvato.")
+    flash_ok("Resoconto salvato" + (" con il prossimo passo." if next_followup else "."))
     return _to_detail(appointment_id, "#resoconto")
 
 

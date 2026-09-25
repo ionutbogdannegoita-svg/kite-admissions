@@ -6,9 +6,11 @@ from typing import Any
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
-from ..schema import MANUAL_INTERACTIONS
+from ..schema import FOLLOWUP_ACTIONS, MANUAL_INTERACTIONS
 from ..services import appointments as appointment_service
 from ..services import families as family_service
+from ..services import followups as followup_service
+from ..services import today as today_service
 from ..services import interactions as interaction_service
 from ..services import leads as lead_service
 from ..services import offers as offer_service
@@ -73,9 +75,11 @@ def index():
     leads_map = family_service.leads_by_family(db, [row["id"] for row in rows])
     years = [row[0] for row in db.all(
         "SELECT DISTINCT school_year FROM StudentLead WHERE school_year IS NOT NULL ORDER BY school_year")]
+    family_ids = [row["id"] for row in rows]
     return render_template(
         "family/index.html", active="families", families=rows, leads_map=leads_map, query=query,
         school_year=school_year, status=status, view=view, years=years,
+        next_steps=today_service.next_steps(db, state().now(), family_ids),
     )
 
 
@@ -127,6 +131,10 @@ def detail(family_id: str):
         needs_report={row["id"] for row in appointments if appointment_service.needs_report(row, now)},
         timeline=timeline_service.family_timeline(db, family_id),
         offer_scopes=offer_service.family_offer_scopes(db, family_id),
+        followups=followup_service.family_followups(db, family_id),
+        followup_actions=FOLLOWUP_ACTIONS,
+        next_step=today_service.next_steps(db, now, [family_id])[family_id],
+        new_followup_id=new_id(),
         new_note_id=new_id(), note_types=MANUAL_INTERACTIONS,
         now_local=utc_iso_to_local_input(stamp(now)),
     )
