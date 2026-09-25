@@ -11,6 +11,7 @@ from ..services import appointments as appointment_service
 from ..services import families as family_service
 from ..services import interactions as interaction_service
 from ..services import leads as lead_service
+from ..services import offers as offer_service
 from ..services import timeline as timeline_service
 from ..services.common import (
     AlreadySavedError,
@@ -125,6 +126,7 @@ def detail(family_id: str):
         appointments=appointments,
         needs_report={row["id"] for row in appointments if appointment_service.needs_report(row, now)},
         timeline=timeline_service.family_timeline(db, family_id),
+        offer_scopes=offer_service.family_offer_scopes(db, family_id),
         new_note_id=new_id(), note_types=MANUAL_INTERACTIONS,
         now_local=utc_iso_to_local_input(stamp(now)),
     )

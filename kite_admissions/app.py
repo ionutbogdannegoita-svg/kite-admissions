@@ -215,6 +215,9 @@ def _register_hooks(app: Flask, state: AppState) -> None:
         if g.pop("gate_entered", False):
             state.gate.exit()
 
+    from .services import offers as offer_service
+    from .services.common import new_id
+
     # Globali Jinja: disponibili anche nelle macro importate.
     app.jinja_env.globals.update(
         csrf_token=csrf_token,
@@ -222,6 +225,10 @@ def _register_hooks(app: Flask, state: AppState) -> None:
         school_name=SCHOOL_NAME,
         app_version=__version__,
         kite=state,
+        new_uuid=new_id,
+        offer_services=offer_service.services_of,
+        offer_discount=offer_service.discount_cents,
+        offer_channels=offer_service.CHANNELS,
     )
 
     @app.errorhandler(HTTPException)
@@ -251,9 +258,10 @@ def _register_filters(app: Flask) -> None:
 
 
 def _register_blueprints(app: Flask) -> None:
-    from .web import appointments, families, panel, today
+    from .web import appointments, families, offers, panel, today
 
     app.register_blueprint(today.bp)
     app.register_blueprint(appointments.bp)
     app.register_blueprint(families.bp)
+    app.register_blueprint(offers.bp)
     app.register_blueprint(panel.bp)
