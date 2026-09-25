@@ -9,7 +9,19 @@ from flask import Blueprint, abort, redirect, render_template, request, url_for
 from ..gcal.source import SourceError
 from ..services import appointments as appointment_service
 from ..services import calendar_import
-from ..services.common import NotFoundError, valid_uuid
+from ..services import families as family_service
+from ..services import leads as lead_service
+from ..services.common import (
+    AlreadySavedError,
+    NotFoundError,
+    StaleWriteError,
+    ValidationError,
+    clean,
+    creation_id,
+    new_id,
+    valid_uuid,
+)
+from ..services.common import stamp
 from ..services.import_runner import RunnerBusy
 from ..settings import DEFAULT_FUTURE_DAYS, DEFAULT_PAST_DAYS
 from ..textutil import html_to_text
@@ -44,14 +56,207 @@ def _appointment_or_404(appointment_id: str):
         abort(404)
 
 
+def _revision() -> int:
+    try:
+        return int(request.form.get("revision", ""))
+    except ValueError:
+        raise StaleWriteError("Modulo incompleto: ricarica la pagina.") from None
+
+
+def _to_detail(appointment_id: str, anchor: str = ""):
+    return redirect(url_for("appointments.detail", appointment_id=appointment_id) + anchor)
+
+
 @bp.get("/<appointment_id>")
 def detail(appointment_id: str):
     appointment = _appointment_or_404(appointment_id)
+    db = get_db()
+    query = request.args.get("q", "").strip()
+    linked = appointment["family_id"] is not None
+    found = appointment_service.contacts(appointment)
+    family = family_service.get_family(db, appointment["family_id"]) if linked else None
+    new_contacts = []
+    if family is not None:
+        known = {family[key] for key in ("primary_phone_norm", "secondary_phone_norm", "primary_email_norm",
+                                         "secondary_email_norm") if family[key]}
+        new_contacts = [item for item in found if item.get("normalized") not in known]
+    default_visited = appointment["visited_at"]
+    if not default_visited and appointment["src_start_at"] and appointment["src_start_at"] <= stamp(state().now()):
+        default_visited = appointment["src_start_at"]
     return render_template(
-        "appointments/detail.html", active="appointments", a=appointment,
-        contacts=appointment_service.contacts(appointment),
+        "appointments/detail.html", active="appointments", a=appointment, family=family,
+        new_contacts=new_contacts, default_visited=default_visited,
+        contacts=found,
         description=html_to_text(appointment["src_description"]),
+        suggestions=[] if linked else appointment_service.suggestions(db, appointment),
+        query=query,
+        results=family_service.search_families(db, query=query, archived="tutte") if query and not linked else [],
+        leads=lead_service.family_leads(db, appointment["family_id"]) if linked else [],
+        has_report=appointment_service.has_report(appointment),
+        discrepancy=appointment_service.date_discrepancy(appointment),
+        outcomes=appointment_service.OUTCOMES,
+        interactions=db.all("SELECT * FROM Interaction WHERE appointment_id = ? ORDER BY occurred_at DESC, rowid DESC",
+                            (appointment_id,)),
     )
+
+
+@bp.post("/<appointment_id>/collega")
+def link(appointment_id: str):
+    _appointment_or_404(appointment_id)
+    family_id = request.form.get("family_id", "")
+    if not valid_uuid(family_id):
+        abort(400)
+    try:
+        appointment_service.link_family(get_db(), appointment_id, family_id, request.form.get("lead_id") or None,
+                                        revision=_revision(), now=state().now())
+    except (ValidationError, StaleWriteError) as exc:
+        flash_error(exc.message)
+        return _to_detail(appointment_id)
+    except NotFoundError:
+        flash_error("Famiglia non trovata.")
+        return _to_detail(appointment_id)
+    flash_ok("Appuntamento collegato alla famiglia. I dati di Google restano separati dall'anagrafica.")
+    return _to_detail(appointment_id, "#locale")
+
+
+@bp.post("/<appointment_id>/richiesta")
+def choose_lead(appointment_id: str):
+    _appointment_or_404(appointment_id)
+    try:
+        appointment_service.set_lead(get_db(), appointment_id, request.form.get("lead_id") or None,
+                                     revision=_revision(), now=state().now())
+    except (ValidationError, StaleWriteError) as exc:
+        flash_error(exc.message)
+        return _to_detail(appointment_id)
+    flash_ok("Riferimento dell'incontro aggiornato.")
+    return _to_detail(appointment_id, "#locale")
+
+
+@bp.get("/<appointment_id>/cambia")
+def change_link_form(appointment_id: str):
+    appointment = _appointment_or_404(appointment_id)
+    if appointment["family_id"] is None:
+        return _to_detail(appointment_id)
+    db = get_db()
+    query = request.args.get("q", "").strip()
+    target = None
+    target_id = request.args.get("famiglia", "")
+    if valid_uuid(target_id):
+        try:
+            target = family_service.get_family(db, target_id)
+        except NotFoundError:
+            target = None
+    results = [row for row in family_service.search_families(db, query=query, archived="tutte")
+               if row["id"] != appointment["family_id"]] if query else []
+    return render_template(
+        "appointments/change_link.html", active="appointments", a=appointment, query=query, results=results,
+        target=target, has_report=appointment_service.has_report(appointment),
+        offers_count=db.scalar("SELECT count(*) FROM Offer WHERE family_id = ?", (appointment["family_id"],)),
+        followups_count=db.scalar("SELECT count(*) FROM FollowUp WHERE family_id = ? AND status = 'APERTO'",
+                                  (appointment["family_id"],)),
+    )
+
+
+@bp.post("/<appointment_id>/cambia")
+def change_link(appointment_id: str):
+    _appointment_or_404(appointment_id)
+    family_id = request.form.get("family_id", "")
+    if not valid_uuid(family_id):
+        abort(400)
+    try:
+        appointment_service.change_link(get_db(), appointment_id, family_id, revision=_revision(), now=state().now())
+    except (ValidationError, StaleWriteError) as exc:
+        flash_error(exc.message)
+        return _to_detail(appointment_id)
+    except NotFoundError:
+        flash_error("Famiglia non trovata.")
+        return _to_detail(appointment_id)
+    flash_ok("Collegamento cambiato. Offerte e follow-up della famiglia precedente non sono stati spostati.")
+    return _to_detail(appointment_id, "#locale")
+
+
+def _render_create_family(appointment, form, *, errors=None, duplicates=None, code: int = 200):
+    return render_template(
+        "appointments/create_family.html", active="appointments", a=appointment, form=form, errors=errors or [],
+        duplicates=duplicates or [], contacts=appointment_service.contacts(appointment),
+        years=lead_service.school_year_options(rome_today(state().now())), grades=lead_service.GRADE_SUGGESTIONS,
+        sources=family_service.CONTACT_SOURCES,
+    ), code
+
+
+@bp.route("/<appointment_id>/nuova-famiglia", methods=["GET", "POST"])
+def create_family(appointment_id: str):
+    appointment = _appointment_or_404(appointment_id)
+    if appointment["family_id"] is not None:
+        flash_warning("L'appuntamento è già collegato a una famiglia.")
+        return _to_detail(appointment_id)
+    if request.method == "GET":
+        found = appointment_service.contacts(appointment)
+        phones = [c for c in found if c.get("type") == "phone"]
+        emails = [c for c in found if c.get("type") == "email"]
+        adult = next((c.get("label") for c in emails if c.get("label")), "")
+        form = {"new_id": new_id(), "revision": appointment["revision"],
+                "display_name": appointment_service.suggest_label(appointment["src_title"]),
+                "primary_adult_name": adult,
+                "primary_phone": phones[0]["value"] if phones else "",
+                "primary_email": emails[0]["value"] if emails else ""}
+        return _render_create_family(appointment, form)
+    form = request.form
+    try:
+        values = family_service.parse_family(form)
+        first_lead = lead_service.parse_lead(form, prefix="lead_") if form.get("lead_display_name", "").strip() else None
+        family_id = appointment_service.create_family_from_event(
+            get_db(), appointment_id, values, first_lead, family_id=creation_id(form.get("new_id")),
+            revision=_revision(), now=state().now(), confirm_distinct=form.get("confirm_distinct") == "1")
+    except ValidationError as exc:
+        return _render_create_family(appointment, form, errors=[exc.message], code=422)
+    except StaleWriteError as exc:
+        return _render_create_family(appointment, form, errors=[exc.message], code=409)
+    except family_service.DuplicateWarning as warning:
+        return _render_create_family(appointment, form, duplicates=warning.matches)
+    except AlreadySavedError as saved:
+        flash_warning("La famiglia era già stata creata: nessun doppione.")
+        return redirect(url_for("families.detail", family_id=saved.record_id))
+    flash_ok("Famiglia creata dall'evento e collegata all'appuntamento.")
+    return _to_detail(appointment_id, "#locale")
+
+
+@bp.post("/<appointment_id>/preparazione")
+def preparation(appointment_id: str):
+    _appointment_or_404(appointment_id)
+    try:
+        appointment_service.save_preparation(get_db(), appointment_id, clean(request.form.get("preparation"), 8000),
+                                             revision=_revision(), now=state().now())
+    except (ValidationError, StaleWriteError) as exc:
+        flash_error(exc.message)
+        return _to_detail(appointment_id, "#preparazione")
+    flash_ok("Preparazione salvata.")
+    return _to_detail(appointment_id, "#preparazione")
+
+
+@bp.post("/<appointment_id>/resoconto")
+def report(appointment_id: str):
+    _appointment_or_404(appointment_id)
+    try:
+        values = appointment_service.parse_report(request.form, state().now())
+        appointment_service.save_report(get_db(), appointment_id, values, revision=_revision(), now=state().now())
+    except (ValidationError, StaleWriteError) as exc:
+        flash_error(exc.message)
+        return _to_detail(appointment_id, "#resoconto")
+    flash_ok("Resoconto salvato.")
+    return _to_detail(appointment_id, "#resoconto")
+
+
+@bp.post("/<appointment_id>/rimuovi")
+def remove(appointment_id: str):
+    _appointment_or_404(appointment_id)
+    try:
+        appointment_service.remove_imported(get_db(), appointment_id, state().now())
+    except ValidationError as exc:
+        flash_error(exc.message)
+        return _to_detail(appointment_id)
+    flash_ok("Evento tolto dagli appuntamenti e segnato come «Ignorato» (revocabile dall'anteprima).")
+    return redirect(url_for("appointments.index", vista="da_collegare"))
 
 
 def _window_defaults() -> dict[str, int]:
