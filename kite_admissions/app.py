@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -14,10 +15,14 @@ from werkzeug.exceptions import HTTPException
 
 from . import APP_ID, APP_NAME, SCHOOL_NAME, __version__
 from . import db as dbmod
+from .gcal.connection import GoogleConnection
+from .gcal.fake import ENV_FIXTURE, FixtureCalendarSource
+from .gcal.source import CalendarSource
 from .paths import Paths
 from .schema import SCHEMA_VERSION
 from .security import RequestGate, apply_security_headers, csrf_token, protect_request
 from .services import backups
+from .services.import_runner import ImportRunner
 from .settings import SettingsStore
 from .timeutil import utc_now
 
@@ -64,7 +69,7 @@ class Recovery:
 class AppState:
     """Stato del processo: percorsi, configurazione, gate e modalità ripristino."""
 
-    def __init__(self, paths: Paths, port: int, clock: Callable[[], datetime]):
+    def __init__(self, paths: Paths, port: int, clock: Callable[[], datetime], services: dict[str, Any]):
         self.paths = paths
         self.port = port
         self.clock = clock
@@ -72,10 +77,35 @@ class AppState:
         self.gate = RequestGate()
         self.recovery: Recovery | None = None
         self.shutdown_callback: Callable[[], None] | None = None
-        self.extras: dict[str, Any] = {}
+        self.import_runner = ImportRunner()
+        self.google = GoogleConnection(
+            paths,
+            store=services.get("protected_store"),
+            flow_runner=services.get("oauth_flow"),
+            session_factory=services.get("session_factory"),
+            revoker=services.get("revoker"),
+        )
+        # Sorgente sostitutiva: sorgente simulata nei test o file di prova per il collaudo.
+        self.calendar_override: CalendarSource | None = services.get("calendar_source")
+        fixture = os.environ.get(ENV_FIXTURE)
+        if self.calendar_override is None and fixture:
+            self.calendar_override = FixtureCalendarSource(fixture)
 
     def now(self) -> datetime:
         return self.clock()
+
+    @property
+    def calendar_is_simulated(self) -> bool:
+        return self.calendar_override is not None
+
+    def calendar_ready(self) -> bool:
+        return self.calendar_override is not None or self.google.is_connected()
+
+    def calendar_source(self) -> CalendarSource:
+        """Sorgente attiva; solleva SourceError se Google non è collegato."""
+        if self.calendar_override is not None:
+            return self.calendar_override
+        return self.google.source()
 
     def open_db(self) -> dbmod.Database:
         return dbmod.Database(self.paths.db_path)
@@ -112,6 +142,9 @@ class AppState:
         self.recovery = Recovery(status, inspection.detail)
         log.warning("Avvio in modalità ripristino: %s", status)
 
+    def after_calendar_write(self) -> None:
+        """Dopo un aggiornamento o un import da Calendar."""
+
     def request_shutdown(self) -> None:
         if self.shutdown_callback is not None:
             self.shutdown_callback()
@@ -136,8 +169,7 @@ def create_app(
         MAX_CONTENT_LENGTH=1024 * 1024,
         TESTING=testing,
     )
-    state = AppState(paths, port, clock)
-    state.extras.update(services)
+    state = AppState(paths, port, clock, services)
     app.extensions["kite"] = state
     state.start()
 

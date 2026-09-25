@@ -2,32 +2,99 @@
 {% from "_macros.html" import csrf, next_here %}
 {% block title %}Dati e collegamento Google{% endblock %}
 {% block content %}
-  <h1>Dati e collegamento Google</h1>
-
-  <section class="card">
-    <h2>Dati locali</h2>
-    {% if location_warning %}<div class="flash flash-warning">{{ location_warning }}</div>{% endif %}
-    <dl class="facts">
-      <dt>Scuola</dt><dd>{{ school_name }}</dd>
-      <dt>Database</dt><dd><code>{{ paths.db_path }}</code></dd>
-      <dt>Configurazione</dt><dd><code>{{ paths.settings_path }}</code></dd>
-      <dt>Backup</dt><dd><code>{{ paths.backups_dir }}</code></dd>
-      <dt>Export</dt><dd><code>{{ paths.exports_dir }}</code></dd>
-      <dt>Versione schema</dt><dd>{{ schema_version }}</dd>
-    </dl>
-    <div class="actions">
-      <form method="post" action="{{ url_for('panel.open_folder') }}">
-        {{ csrf() }}{{ next_here() }}<input type="hidden" name="folder" value="dati">
-        <button type="submit" class="btn btn-secondary">Apri cartella dati</button>
-      </form>
+  <div class="page-head">
+    <div>
+      <h1>Dati e collegamento Google</h1>
+      <div class="sub">{{ school_name }} · un solo utilizzatore su questo PC</div>
     </div>
-    <table class="list compact">
-      <thead><tr><th>Tabella</th><th class="num">Righe</th></tr></thead>
-      <tbody>
-        {% for table, count in counts.items() %}
-          <tr><td>{{ table }}</td><td class="num">{{ count }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </section>
+  </div>
+
+  <div class="grid-halves">
+    <section class="card" id="google">
+      <h2>Google Calendar (sola lettura)</h2>
+      {% if simulated %}
+        <div class="flash flash-warning">Sorgente in uso: <strong>{{ simulated_label }}</strong>. Nessun collegamento a Google.</div>
+      {% else %}
+        <ol class="steps">
+          <li>
+            <strong>Client OAuth «App desktop»</strong>
+            {% if google_client %}
+              <span class="badge badge-ok">Configurato</span>
+              <div class="item-meta">Client {{ google_client.client_id }}{% if google_client.project_id %} · progetto {{ google_client.project_id }}{% endif %}</div>
+            {% else %}
+              <span class="badge badge-warn">Da configurare</span>
+              <div class="item-meta">Crea in Google Cloud un client OAuth di tipo «App desktop» e caricane qui il file JSON (vedi README).</div>
+            {% endif %}
+            <form method="post" action="{{ url_for('panel.google_client') }}" enctype="multipart/form-data" class="actions">
+              {{ csrf() }}
+              <input type="file" name="client_file" accept=".json,application/json" required>
+              <button type="submit" class="btn btn-secondary btn-small">{{ 'Sostituisci' if google_client else 'Carica' }}</button>
+            </form>
+          </li>
+          <li>
+            <strong>Autorizzazione in lettura</strong>
+            {% if google_connected %}
+              <span class="badge badge-ok">Collegato</span>
+              <form method="post" action="{{ url_for('panel.google_disconnect') }}" class="actions">{{ csrf() }}
+                <button type="submit" class="btn btn-quiet btn-small">Scollega e revoca</button></form>
+            {% else %}
+              <span class="badge badge-warn">Non collegato</span>
+              <div class="item-meta">Si apre il browser per il consenso Google (permessi: lettura eventi e lettura elenco calendari).</div>
+              {% if google_client %}
+                <form method="post" action="{{ url_for('panel.google_connect') }}" class="actions">{{ csrf() }}
+                  <button type="submit" class="btn btn-small">Collega Google</button></form>
+              {% endif %}
+            {% endif %}
+          </li>
+        </ol>
+      {% endif %}
+      <h3>Calendario sorgente</h3>
+      {% if settings.calendar %}
+        <p><strong>{{ settings.calendar.summary }}</strong> <span class="item-meta">{{ settings.calendar.id }}</span></p>
+      {% else %}
+        <p class="muted">Nessun calendario scelto.</p>
+      {% endif %}
+      {% if simulated or google_connected %}
+        <a class="btn btn-secondary btn-small" href="{{ url_for('panel.google_calendars') }}">{{ 'Cambia calendario' if settings.calendar else 'Scegli il calendario' }}</a>
+      {% endif %}
+      <h3>Finestra predefinita dell'import</h3>
+      <form method="post" action="{{ url_for('panel.google_window') }}" class="actions">{{ csrf() }}
+        <label class="small">Giorni precedenti <input type="number" name="past_days" min="0" max="365" value="{{ window.past_days }}"></label>
+        <label class="small">Giorni successivi <input type="number" name="future_days" min="1" max="730" value="{{ window.future_days }}"></label>
+        <button type="submit" class="btn btn-secondary btn-small">Salva</button>
+      </form>
+      <h3>Ultimo aggiornamento</h3>
+      {% include "_calendar_status.html" %}
+      {% if exclusions %}
+        <p class="item-meta">Eventi esclusi dall'import: {{ exclusions.get('IGNORED', 0) }} ignorati, {{ exclusions.get('FAMILY_DELETED', 0) }} di famiglie eliminate.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Dati locali</h2>
+      {% if location_warning %}<div class="flash flash-warning">{{ location_warning }}</div>{% endif %}
+      <dl class="facts">
+        <dt>Database</dt><dd><code>{{ paths.db_path }}</code></dd>
+        <dt>Configurazione</dt><dd><code>{{ paths.settings_path }}</code></dd>
+        <dt>Backup</dt><dd><code>{{ paths.backups_dir }}</code></dd>
+        <dt>Export</dt><dd><code>{{ paths.exports_dir }}</code></dd>
+        <dt>Versione schema</dt><dd>{{ schema_version }}</dd>
+      </dl>
+      <div class="actions">
+        <form method="post" action="{{ url_for('panel.open_folder') }}">
+          {{ csrf() }}{{ next_here() }}<input type="hidden" name="folder" value="dati">
+          <button type="submit" class="btn btn-secondary">Apri cartella dati</button>
+        </form>
+      </div>
+      <table class="list compact">
+        <thead><tr><th>Tabella</th><th class="num">Righe</th></tr></thead>
+        <tbody>
+          {% for table, count in counts.items() %}
+            <tr><td>{{ table }}</td><td class="num">{{ count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="item-meta">Il database non è cifrato da SQLite: la protezione dipende dall'account Windows e dalla cifratura del disco. Blocca la sessione quando il PC è incustodito.</p>
+    </section>
+  </div>
 {% endblock %}

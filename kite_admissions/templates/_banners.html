@@ -4,3 +4,8 @@
     <a href="{{ url_for('panel.recovery') }}">Vai al ripristino</a>
   </div>
 {% endif %}
+{% if kite.calendar_is_simulated %}
+  <div class="banner banner-warning" role="status">
+    Sorgente Calendar di prova: <strong>{{ kite.calendar_override.label }}</strong>. Nessun collegamento a Google.
+  </div>
+{% endif %}

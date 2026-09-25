@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Calendario sorgente{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Scegli il calendario sorgente</h1>
+      <div class="sub">Un solo calendario. Non si presume che contenga soltanto appuntamenti Admissions: gli eventi si importano uno per uno dall'anteprima.</div>
+    </div>
+  </div>
+  <section class="card">
+    {% if calendars %}
+      <form method="post" action="{{ url_for('panel.google_select_calendar') }}">
+        {{ csrf() }}
+        <table class="list">
+          <thead><tr><th></th><th>Calendario</th><th>Accesso</th></tr></thead>
+          <tbody>
+            {% for calendar in calendars %}
+              <tr>
+                <td><input type="radio" name="calendar_id" value="{{ calendar.id }}" id="cal-{{ loop.index }}" {{ 'checked' if calendar.id == current }} required></td>
+                <td><label for="cal-{{ loop.index }}"><strong>{{ calendar.summary }}</strong>{% if calendar.primary %} <span class="badge">principale</span>{% endif %}</label>
+                  <div class="item-meta">{{ calendar.id }}</div></td>
+                <td>{{ calendar.access_role or '' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="form-actions">
+          <button type="submit" class="btn">Usa questo calendario</button>
+          <a href="{{ url_for('panel.index') }}#google">Annulla</a>
+        </div>
+      </form>
+    {% else %}
+      <p class="empty">Nessun calendario leggibile per questo account.</p>
+    {% endif %}
+  </section>
+{% endblock %}

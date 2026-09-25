@@ -1,0 +1,16 @@
+{# Pulsante «Aggiorna da Google Calendar» con finestra modificabile prima dell'import. #}
+{% set window_cfg = kite.settings.load().get('import_window') or {} %}
+{% set calendar_cfg = kite.settings.load().get('calendar') %}
+<form method="post" action="{{ url_for('appointments.refresh') }}" class="refresh-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if calendar_cfg %}
+    <button type="submit" class="btn">Aggiorna da Google Calendar</button>
+    <details class="inline-details">
+      <summary class="small">Finestra: {{ window_cfg.past_days if window_cfg.past_days is defined else 30 }} giorni prima, {{ window_cfg.future_days if window_cfg.future_days is defined else 180 }} dopo</summary>
+      <label class="small">Giorni precedenti <input type="number" name="past_days" min="0" max="365" value="{{ window_cfg.past_days if window_cfg.past_days is defined else 30 }}"></label>
+      <label class="small">Giorni successivi <input type="number" name="future_days" min="1" max="730" value="{{ window_cfg.future_days if window_cfg.future_days is defined else 180 }}"></label>
+    </details>
+  {% else %}
+    <a class="btn btn-secondary" href="{{ url_for('panel.index') }}#google">Configura Google Calendar</a>
+  {% endif %}
+</form>

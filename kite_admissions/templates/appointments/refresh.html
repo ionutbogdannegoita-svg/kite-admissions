@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% from "_appt.html" import event_when %}
+{% block title %}Aggiornamento da Google Calendar{% endblock %}
+{% block head %}{% if running %}<meta http-equiv="refresh" content="1">{% endif %}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Aggiornamento da Google Calendar</h1>
+      <div class="sub">Sola lettura: il CRM non crea, modifica o cancella nulla in Google Calendar.</div>
+    </div>
+    {% if not running %}{% include "_refresh_form.html" %}{% endif %}
+  </div>
+
+  {% if running %}
+    {% set p = runner.progress %}
+    <section class="card">
+      <h2>Aggiornamento in corso…</h2>
+      <p>{{ p.phase }}</p>
+      <p class="small">Pagine lette: {{ p.pages or 0 }} · appuntamenti verificati: {{ p.verified or 0 }} su {{ p.to_verify or 0 }}</p>
+      <div class="progress"><span class="w-{{ ((p.verified or 0) * 10 // (p.to_verify or 1)) * 10 if p.to_verify else 5 }}"></span></div>
+      <p class="item-meta">La pagina si aggiorna da sola. Una sola operazione Calendar alla volta.</p>
+    </section>
+  {% else %}
+    {% if runner.error %}<div class="flash flash-error">{{ runner.error }}</div>{% endif %}
+
+    {% if summary %}
+      <section class="card {{ 'alert' if summary.status != 'OK' }}">
+        <div class="card-head">
+          <h2>Riepilogo</h2>
+          {% if summary.status == 'OK' %}<span class="badge badge-ok">Controllo completo riuscito</span>
+          {% elif summary.status == 'PARTIAL' %}<span class="badge badge-warn">Aggiornamento parziale</span>
+          {% else %}<span class="badge badge-danger">Aggiornamento non riuscito</span>{% endif %}
+        </div>
+        {% if summary.listing_error %}<div class="flash flash-error">{{ summary.listing_error }} Nessun appuntamento è stato cancellato.</div>{% endif %}
+        <table class="list compact">
+          <tbody>
+            <tr><td>Eventi letti nella finestra ({{ summary.pages }} pagine)</td><td class="num">{{ summary.listed }}</td></tr>
+            <tr><td>Appuntamenti aggiornati</td><td class="num">{{ summary.updated }}</td></tr>
+            <tr><td>Invariati</td><td class="num">{{ summary.unchanged }}</td></tr>
+            <tr><td>Annullamenti confermati da Google</td><td class="num">{{ summary.cancelled }}</td></tr>
+            <tr><td>Riattivati</td><td class="num">{{ summary.reactivated }}</td></tr>
+            <tr><td>Non verificati (copia precedente conservata)</td><td class="num">{{ summary.not_verified }}</td></tr>
+            <tr><td>Nuovi eventi selezionabili</td><td class="num">{{ summary.new_candidates }}</td></tr>
+          </tbody>
+        </table>
+        <p class="item-meta">Tentativo {{ summary.attempted_at|dt }} · finestra {{ summary.window_start|d }} – {{ summary.window_end|d }} (esclusa)</p>
+        {% for message in summary.errors %}<div class="flash flash-warning">{{ message }}</div>{% endfor %}
+      </section>
+    {% endif %}
+
+    {% if preview %}
+      <section class="card" id="nuovi">
+        <div class="card-head">
+          <h2>Nuovi eventi da selezionare <span class="count {{ 'zero' if not preview.candidates }}">{{ preview.candidates|length }}</span></h2>
+          <span class="item-meta">Anteprima del {{ preview.created_at|dt }}</span>
+        </div>
+        {% if preview_stale %}<div class="flash flash-warning">Anteprima non più attuale: premi di nuovo «Aggiorna da Google Calendar».</div>{% endif %}
+        <p class="small muted">Nessun evento è preselezionato: scegli soltanto gli appuntamenti Admissions. Gli eventi non selezionati non vengono salvati.</p>
+        {% if preview.candidates %}
+          <form method="post" action="{{ url_for('appointments.import_selected') }}" id="import-form">
+            {{ csrf() }}
+          </form>
+          <table class="list">
+            <thead><tr><th>Importa</th><th>Quando</th><th>Evento</th><th></th></tr></thead>
+            <tbody>
+              {% for event in preview.sorted_candidates() %}
+                <tr>
+                  <td><input type="checkbox" name="event_id" value="{{ event.event_id }}" form="import-form" aria-label="Importa {{ event.title or 'evento' }}"></td>
+                  <td class="nowrap">{{ event_when(event) }}</td>
+                  <td>
+                    <strong>{{ event.title or '(senza titolo)' }}</strong>
+                    {% if event.status == 'tentative' %}<span class="badge badge-tentative">Da confermare</span>{% endif %}
+                    {% if event.recurring_event_id %}<span class="badge">Occorrenza di un evento ricorrente</span>{% endif %}
+                    {% if event.location %}<div class="item-meta">{{ event.location }}</div>{% endif %}
+                    {% if preview.similar.get(event.event_id) %}
+                      <div class="flash flash-warning small">Simile a un appuntamento già importato:
+                        {% for other in preview.similar[event.event_id] %}«{{ other.title }}»{% if not loop.last %}, {% endif %}{% endfor %}.
+                        Possibile copia: nessuna fusione automatica.</div>
+                    {% endif %}
+                  </td>
+                  <td class="actions-cell">
+                    <form method="post" action="{{ url_for('appointments.ignore') }}">{{ csrf() }}
+                      <input type="hidden" name="event_id" value="{{ event.event_id }}">
+                      <button type="submit" class="btn btn-small btn-quiet" title="Non riproporre questo evento">Ignora</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <div class="form-actions">
+            <button type="submit" class="btn" form="import-form">Importa selezionati</button>
+          </div>
+        {% else %}
+          <p class="empty">Nessun nuovo evento nella finestra.</p>
+        {% endif %}
+
+        {% if preview.invalid %}
+          <h3>Eventi non importabili</h3>
+          <ul>
+            {% for event in preview.invalid %}<li>{{ event.title or '(senza titolo)' }} — {{ event.invalid_reason }} Correggilo in Google Calendar.</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </section>
+
+      <section class="card" id="ignorati">
+        <details class="panel" {{ 'open' if preview.ignored and request.args.get('ignorati') }}>
+          <summary>Eventi ignorati nella finestra ({{ preview.ignored|length }})</summary>
+          <div class="panel-body">
+            {% for event in preview.sorted_ignored() %}
+              <div class="item-list-row">
+                {{ event_when(event) }} · {{ event.title or '(senza titolo)' }}
+                <form method="post" action="{{ url_for('appointments.unignore') }}" class="inline">{{ csrf() }}
+                  <input type="hidden" name="event_id" value="{{ event.event_id }}">
+                  <button type="submit" class="btn btn-small btn-quiet">Non ignorare più</button>
+                </form>
+              </div>
+            {% else %}
+              <p class="empty">Nessun evento ignorato in questa finestra.</p>
+            {% endfor %}
+          </div>
+        </details>
+      </section>
+    {% elif not summary %}
+      <section class="card"><p>Premi «Aggiorna da Google Calendar» per leggere gli eventi.</p></section>
+    {% endif %}
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% from "_appt.html" import when, status_badges %}
+{% block title %}{{ a.src_title or 'Appuntamento' }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ a.src_title or '(senza titolo)' }}</h1>
+      <div class="sub">{{ when(a) }} {{ status_badges(a) }}</div>
+    </div>
+    <div class="actions">
+      {% if a.src_html_link %}
+        <a class="btn btn-secondary" href="{{ a.src_html_link }}" target="_blank" rel="noopener noreferrer">Apri in Google Calendar</a>
+      {% endif %}
+      <a class="btn btn-quiet" href="{{ url_for('appointments.index') }}">Torna agli appuntamenti</a>
+    </div>
+  </div>
+
+  <div class="grid-halves">
+    <section class="source-box">
+      <h2>Dati da Google Calendar</h2>
+      {% if a.src_status == 'CANCELLED_SOURCE' %}
+        <div class="flash flash-error">Annullato su Google Calendar. Collegamenti, resoconto e offerte restano conservati.</div>
+      {% endif %}
+      {% if a.verification_state == 'NOT_VERIFIED' %}
+        <div class="flash flash-warning">Non verificato: {{ a.verification_error }} Controlla l'evento in Google Calendar. I dati sotto sono l'ultima copia valida.</div>
+      {% endif %}
+      <dl class="facts">
+        <dt>Quando</dt><dd>{{ when(a) }}{% if a.src_time_zone %} <span class="item-meta">({{ a.src_time_zone }})</span>{% endif %}</dd>
+        {% if a.src_start_date and a.src_end_date %}<dt>Giorni</dt><dd>dal {{ a.src_start_date|d }}, fine esclusiva {{ a.src_end_date|d }}</dd>{% endif %}
+        {% if a.src_location %}<dt>Luogo</dt><dd>{{ a.src_location }}</dd>{% endif %}
+        {% if a.src_recurring_event_id %}<dt>Ricorrenza</dt><dd>Occorrenza della serie <code>{{ a.src_recurring_event_id }}</code>{% if a.src_original_start %}, inizio originale {{ a.src_original_start }}{% endif %}</dd>{% endif %}
+        <dt>Recapiti nell'evento</dt>
+        <dd>
+          {% if contacts %}
+            <ul class="contacts-list">
+              {% for c in contacts %}<li>{{ c.value }} <span class="item-meta">({{ 'telefono' if c.type == 'phone' else 'email' }} · da {{ c.source }}{% if c.label %} · {{ c.label }}{% endif %})</span></li>{% endfor %}
+            </ul>
+          {% else %}<span class="muted">nessuno</span>{% endif %}
+        </dd>
+        <dt>Modifica su Google</dt><dd>{{ a.src_updated_at or '—' }}</dd>
+        <dt>Ultima verifica riuscita</dt><dd>{{ a.last_synced_at|dt }}</dd>
+        <dt>Ultimo controllo</dt><dd>{{ a.last_checked_at|dt }}</dd>
+      </dl>
+      <h3>Descrizione</h3>
+      {% if description %}<div class="pre small">{{ description }}</div>{% else %}<p class="muted">Nessuna descrizione.</p>{% endif %}
+      <p class="item-meta">Titolo, orari e annullamenti si modificano in Google Calendar; poi si preme «Aggiorna».</p>
+    </section>
+
+    <section class="card" id="locale">
+      {% block local %}
+        <h2>Dati locali</h2>
+        {% if a.family_id %}
+          <p>Famiglia: <a href="{{ url_for('families.detail', family_id=a.family_id) }}">{{ a.family_name }}</a></p>
+        {% else %}
+          <p class="muted">Non collegato a una famiglia.</p>
+        {% endif %}
+      {% endblock %}
+    </section>
+  </div>
+{% endblock %}
