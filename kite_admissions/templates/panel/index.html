@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, next_here %}
+{% block title %}Dati e collegamento Google{% endblock %}
+{% block content %}
+  <h1>Dati e collegamento Google</h1>
+
+  <section class="card">
+    <h2>Dati locali</h2>
+    {% if location_warning %}<div class="flash flash-warning">{{ location_warning }}</div>{% endif %}
+    <dl class="facts">
+      <dt>Scuola</dt><dd>{{ school_name }}</dd>
+      <dt>Database</dt><dd><code>{{ paths.db_path }}</code></dd>
+      <dt>Configurazione</dt><dd><code>{{ paths.settings_path }}</code></dd>
+      <dt>Backup</dt><dd><code>{{ paths.backups_dir }}</code></dd>
+      <dt>Export</dt><dd><code>{{ paths.exports_dir }}</code></dd>
+      <dt>Versione schema</dt><dd>{{ schema_version }}</dd>
+    </dl>
+    <div class="actions">
+      <form method="post" action="{{ url_for('panel.open_folder') }}">
+        {{ csrf() }}{{ next_here() }}<input type="hidden" name="folder" value="dati">
+        <button type="submit" class="btn btn-secondary">Apri cartella dati</button>
+      </form>
+    </div>
+    <table class="list compact">
+      <thead><tr><th>Tabella</th><th class="num">Righe</th></tr></thead>
+      <tbody>
+        {% for table, count in counts.items() %}
+          <tr><td>{{ table }}</td><td class="num">{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

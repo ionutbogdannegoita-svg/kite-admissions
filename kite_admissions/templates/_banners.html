@@ -1,0 +1,6 @@
+{% if kite.recovery %}
+  <div class="banner banner-danger" role="alert">
+    <strong>Database non utilizzabile.</strong> {{ kite.recovery.detail }}
+    <a href="{{ url_for('panel.recovery') }}">Vai al ripristino</a>
+  </div>
+{% endif %}

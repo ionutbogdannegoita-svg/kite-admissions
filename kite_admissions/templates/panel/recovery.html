@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Ripristino{% endblock %}
+{% block content %}
+  <h1>Ripristino dei dati</h1>
+  {% if recovery %}
+    <div class="flash flash-error">{{ recovery.detail or "Il database non è utilizzabile." }}</div>
+  {% else %}
+    <p>Il database è utilizzabile.</p>
+  {% endif %}
+  <p>Database: <code>{{ paths.db_path }}</code></p>
+{% endblock %}

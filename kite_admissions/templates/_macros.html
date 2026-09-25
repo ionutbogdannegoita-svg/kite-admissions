@@ -1,0 +1,23 @@
+{% macro csrf() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+{% macro next_here() -%}
+  <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+{%- endmacro %}
+
+{% macro badge(value, kind='') -%}
+  <span class="badge badge-{{ kind or (value|lower) }}">{{ value|label }}</span>
+{%- endmacro %}
+
+{% macro lead_badge(status) -%}
+  <span class="badge badge-lead-{{ status|lower }}">{{ status|label }}</span>
+{%- endmacro %}
+
+{% macro errors_box(errors) -%}
+  {% if errors %}
+    <div class="flash flash-error" role="alert">
+      {% for message in errors %}<div>{{ message }}</div>{% endfor %}
+    </div>
+  {% endif %}
+{%- endmacro %}
