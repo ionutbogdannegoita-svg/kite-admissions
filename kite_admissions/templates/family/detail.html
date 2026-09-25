@@ -9,9 +9,9 @@
         {% if family.archived_at %}<span class="badge badge-archived">Archiviata il {{ family.archived_at|d }}</span>{% endif %}
       </h1>
       <div class="sub">
-        {% if family.primary_adult_name %}{{ family.primary_adult_name }} · {% endif %}
-        {% if family.contact_source %}fonte: {{ family.contact_source }} · {% endif %}
-        {% if family.first_contact_on %}primo contatto {{ family.first_contact_on|d }}{% endif %}
+        {{ [family.primary_adult_name,
+            ('fonte: ' ~ family.contact_source) if family.contact_source,
+            ('primo contatto ' ~ family.first_contact_on|d) if family.first_contact_on]|select|join(' · ') }}
       </div>
     </div>
     <div class="actions">
@@ -174,7 +174,7 @@
           <div class="flash flash-error">Senza prossimo passo{% if next_step.uncovered_leads %}: {{ next_step.uncovered_leads|join(', ') }}{% endif %}.</div>
           <p class="small">Aggiungi un follow-up o fai fissare una visita in Google Calendar.</p>
         {% endif %}
-        {% if next_step.label %}<p><strong>{{ next_step.label }}</strong></p>{% endif %}
+        {% if next_step.label %}<p><strong>{{ next_step.label }}</strong>{% if next_step.overdue %} <span class="badge badge-scaduto">Scaduto</span>{% endif %}</p>{% endif %}
       </section>
       <section class="card">
         <h2>Recapiti</h2>

@@ -186,7 +186,9 @@ def restore(
             for key in DATA_KEYS:
                 if key in backup_settings:
                     data[key] = backup_settings[key]
-            data["last_import"] = None  # lo stato Calendar va ricontrollato dopo il ripristino
+            # Lo stato Calendar va ricontrollato dopo il ripristino.
+            data["last_import"] = {"status": "RESTORED", "attempted_at": None, "finished_at": None,
+                                   "full_check_at": None, "counts": {}, "problem": None}
             data["post_restore"] = report.as_settings()
 
         settings.update(mutate)

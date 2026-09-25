@@ -38,7 +38,7 @@
             </ul>
           {% else %}<span class="muted">nessuno</span>{% endif %}
         </dd>
-        <dt>Modifica su Google</dt><dd>{{ a.src_updated_at or '—' }}</dd>
+        <dt>Modifica su Google</dt><dd>{{ a.src_updated_at|rfc_dt or '—' }}</dd>
         <dt>Ultima verifica riuscita</dt><dd>{{ a.last_synced_at|dt }}</dd>
         <dt>Ultimo controllo</dt><dd>{{ a.last_checked_at|dt }}</dd>
       </dl>

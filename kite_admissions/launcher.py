@@ -131,7 +131,7 @@ def _open_existing(paths: Paths, open_browser: bool) -> int:
     while time.monotonic() < deadline:
         info = _read_instance(paths)
         if info and _is_alive(info["url"]):
-            log.info("Istanza già attiva su %s: apro il browser", info["url"])
+            log.info("Istanza già attiva su %s: nessun secondo server", info["url"])
             if open_browser:
                 webbrowser.open(info["url"])
             return 0

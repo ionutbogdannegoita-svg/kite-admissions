@@ -80,6 +80,7 @@
               {% set step = next_steps.get(family.id) if next_steps is defined else none %}
               {% if step %}
                 {% if step.missing %}<span class="badge badge-danger">Senza prossimo passo</span>{% else %}{{ step.label }}{% endif %}
+                {% if step.overdue and not step.missing %}<span class="badge badge-scaduto">Scaduto</span>{% endif %}
               {% else %}<span class="muted">—</span>{% endif %}
             </td>
           </tr>

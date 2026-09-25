@@ -10,8 +10,19 @@ from ..labels import LABELS, euro, euro_input, label
 __all__ = ["LABELS", "euro", "euro_input", "label", "register"]
 
 
+def rfc_datetime(value: str | None) -> str:
+    """Orario RFC 3339 di Google mostrato in Europe/Rome; il testo originale se non leggibile."""
+    if not value:
+        return ""
+    try:
+        return timeutil.format_datetime(timeutil.parse_rfc3339(value))
+    except ValueError:
+        return value
+
+
 def register(app: Flask) -> None:
     app.jinja_env.filters.update(
+        rfc_dt=rfc_datetime,
         label=label,
         euro=euro,
         euro_input=euro_input,

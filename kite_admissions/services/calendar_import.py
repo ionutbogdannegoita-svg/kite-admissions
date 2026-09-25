@@ -65,6 +65,8 @@ class ImportSummary:
     def problem(self) -> str | None:
         if self.listing_error:
             return self.listing_error
+        if self.not_verified == 1:
+            return "1 appuntamento non verificato: controlla Google Calendar."
         if self.not_verified:
             return f"{self.not_verified} appuntamenti non verificati: controlla Google Calendar."
         return self.errors[0] if self.errors else None
@@ -362,6 +364,8 @@ def unignore_event(db: Database, preview: Preview | None, calendar_id: str, even
 def summary_record(summary: ImportSummary, previous: dict[str, Any] | None) -> dict[str, Any]:
     """Stato dell'ultimo aggiornamento per la configurazione locale (senza contenuti degli eventi)."""
     previous = previous or {}
+    if previous.get("status") == "RESTORED":
+        previous = {}  # dopo un ripristino un controllo completo precedente non vale più
     return {
         "attempted_at": summary.attempted_at,
         "finished_at": summary.finished_at,

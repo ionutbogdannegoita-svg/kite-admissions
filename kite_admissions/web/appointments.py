@@ -299,6 +299,11 @@ def _refresh_job(app_state, calendar_id: str, past: int, future: int):
             summary, preview = calendar_import.refresh(
                 db, source, calendar_id=calendar_id, time_min=time_min, time_max=time_max, now=now,
                 clock=app_state.clock, progress=report)
+        except Exception:
+            app_state.settings.update(lambda data: data.__setitem__("last_import", calendar_import.failed_record(
+                stamp(now), "Errore imprevisto durante l'aggiornamento: nessun dato è stato cancellato.",
+                data.get("last_import"))))
+            raise
         finally:
             db.close()
         app_state.settings.update(

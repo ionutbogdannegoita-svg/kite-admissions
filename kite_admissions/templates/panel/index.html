@@ -115,7 +115,7 @@
         <tbody>
           {% for item in backup_list[:12] %}
             <tr>
-              <td>{% if item.error %}<span class="badge badge-danger">illeggibile</span> {{ item.name }}{% else %}{{ item.created_at|dt }}{% endif %}</td>
+              <td class="nowrap">{% if item.error %}<span class="badge badge-danger">illeggibile</span> {{ item.name }}{% else %}{{ item.created_at|dt_short }}{% endif %}</td>
               <td>{{ item.kind }}{% if item.operation %} · {{ item.operation }}{% endif %}</td>
               <td class="num">{{ item.counts.get('Family', '') }}</td>
               <td class="actions-cell">

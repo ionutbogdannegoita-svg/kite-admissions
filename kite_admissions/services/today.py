@@ -32,6 +32,7 @@ class NextStep:
     when: str = ""
     uncovered_leads: list[str] = field(default_factory=list)
     closed: bool = False
+    overdue: bool = False
 
 
 def next_steps(db: Database, now: datetime, family_ids: list[str] | None = None) -> dict[str, NextStep]:
@@ -87,7 +88,8 @@ def next_steps(db: Database, now: datetime, family_ids: list[str] | None = None)
             missing = bool(uncovered)
         first = candidates[0] if candidates else None
         result[family_id] = NextStep(family_id, missing=missing, label=first[2] if first else "",
-                                     when=first[0] if first else "", uncovered_leads=uncovered)
+                                     when=first[0] if first else "", uncovered_leads=uncovered,
+                                     overdue=bool(first) and first[0][:10] < params["today"])
     return result
 
 

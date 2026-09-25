@@ -35,7 +35,7 @@
         {% if summary.listing_error %}<div class="flash flash-error">{{ summary.listing_error }} Nessun appuntamento è stato cancellato.</div>{% endif %}
         <table class="list compact">
           <tbody>
-            <tr><td>Eventi letti nella finestra ({{ summary.pages }} pagine)</td><td class="num">{{ summary.listed }}</td></tr>
+            <tr><td>Eventi letti nella finestra (pagine lette: {{ summary.pages }})</td><td class="num">{{ summary.listed }}</td></tr>
             <tr><td>Appuntamenti aggiornati</td><td class="num">{{ summary.updated }}</td></tr>
             <tr><td>Invariati</td><td class="num">{{ summary.unchanged }}</td></tr>
             <tr><td>Annullamenti confermati da Google</td><td class="num">{{ summary.cancelled }}</td></tr>
