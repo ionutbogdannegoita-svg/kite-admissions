@@ -117,7 +117,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Dev -NoShortcut
 .venv\Scripts\python.exe -m pytest
 ```
 
-La suite (circa 170 test) usa solo dati sintetici e cartelle temporanee e copre: schema e vincoli, sicurezza locale, avvio reale con Waitress a istanza singola, famiglie e richieste, import Calendar (sorgente simulata e adapter Google a livello HTTP), collegamento, cronologia, offerte, follow-up e Oggi, backup/ripristino/export/eliminazione e un flusso end-to-end completo.
+La suite (170 test alla chiusura della V1) usa solo dati sintetici e cartelle temporanee e copre: schema e vincoli, sicurezza locale, avvio reale con Waitress a istanza singola, famiglie e richieste, import Calendar (sorgente simulata e adapter Google a livello HTTP), collegamento, cronologia, offerte, follow-up e Oggi, backup/ripristino/export/eliminazione e un flusso end-to-end completo.
 
 ### Collaudo senza credenziali Google
 

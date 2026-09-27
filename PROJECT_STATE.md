@@ -4,9 +4,9 @@
 
 `V1_COMPLETE`
 
-Aggiornato il **2026-09-26 (Europe/Rome)**. Implementazione completa della V1 sul branch `v1-implementation`, in attesa di revisione e merge su `main` da parte di Ionut.
+Verificato il **2026-09-27 (Europe/Rome)** con la revisione indipendente finale del branch `v1-implementation` rispetto a [SPEC.md](SPEC.md): codice, test automatici, collaudo end-to-end e criteri AC01–AC10. La V1 è in una Pull Request da `v1-implementation` verso `main`, in attesa di revisione e merge da parte di Ionut (nessun merge automatico).
 
-[SPEC.md](SPEC.md) resta la fonte autorevole (versione 0.2 del 25 settembre 2026, invariata). Le scelte tecniche emerse durante lo sviluppo sono in [DECISIONS.md](DECISIONS.md) (DEC-013 e seguenti).
+[SPEC.md](SPEC.md) resta la fonte autorevole (versione 0.2 del 25 settembre 2026, invariata). Le diciture della sua intestazione («da validare», «Nessuna implementazione avviata») sono storiche e restano come scritte: lo stato corrente è quello di questa pagina. Le scelte tecniche emerse durante lo sviluppo sono in [DECISIONS.md](DECISIONS.md) (DEC-013 e seguenti).
 
 ## Architettura (come da SPEC)
 
@@ -30,18 +30,23 @@ Aggiornato il **2026-09-26 (Europe/Rome)**. Implementazione completa della V1 su
 | 6 — FollowUp + Oggi | Follow-up con esito, regole del prossimo passo, vista Oggi operativa, resoconto con prossimo passo |
 | 7 — Backup/export/restore | Backup automatico giornaliero, manuale e pre-operazione con conservazione; ripristino B2 verificato anche con database assente o danneggiato; verifica post-ripristino; export CSV/JSON; eliminazione definitiva con esclusione degli eventi |
 
+## Revisione indipendente finale (2026-09-27)
+
+- Rilettura critica di tutto il codice rispetto alla SPEC: database e vincoli, famiglie e richieste, Google Calendar, appuntamenti, cronologia, offerte, follow-up e Oggi, backup e ripristino, sicurezza locale.
+- **Un difetto trovato e corretto.** L'estrazione deterministica dei recapiti dal testo degli eventi scambiava date (`12/03/2019`, `25.09.2026`) e anni scolastici (`2026/2027`) per numeri di telefono, e il primo «telefono» trovato precompilava il modulo «Crea famiglia dall'evento»: un recapito inventato (SPEC §4.3, §5). Ora date e anni scolastici sono separati dal testo prima della ricerca dei numeri; i numeri veri restano riconosciuti.
+- Test aggiunti: regressione del difetto; annullamento e riattivazione di un evento spostato fuori finestra, letti per ID; aggiornamento completo attraverso l'adapter Google su HTTP simulato (tutte le pagine, sole richieste GET, 404 che non vale come annullamento); ripristino rifiutato mentre è in corso un aggiornamento Calendar.
+
 ## Test
 
-- `.venv\Scripts\python.exe -m pytest`: **165 test verdi** su dati sintetici e cartelle temporanee (schema e vincoli, sicurezza, avvio reale con Waitress, flussi di ogni slice, flusso end-to-end completo).
-- Collaudo manuale sul server reale con calendario di prova da file: import misto, collegamento e creazione dall'evento, visita, offerte con doppio clic, spostamento/annullamento/riattivazione/errore 404, Oggi, backup → modifica → ripristino → verifica dei valori, export, chiusura dall'interfaccia.
-- Avvio da collegamento Windows con `pythonw` (senza console): un'istanza sola in ascolto su `127.0.0.1`, il secondo avvio riapre la stessa, chiusura pulita.
+- `.venv\Scripts\python.exe -m pytest`: **170 test verdi** (166 della sessione di sviluppo + 4 della revisione), su dati sintetici e cartelle temporanee.
+- Collaudo end-to-end su server Waitress reale, con cartella dati separata, calendario di prova da file e soli dati sintetici: **42/42 controlli superati**. Coperti: database nuovo, avvio a istanza singola solo su `127.0.0.1` (porta irraggiungibile dagli indirizzi di rete del PC), famiglie e richieste, import selettivo, cinque collegamenti o creazioni dall'evento, visita, offerta comunicata con doppio clic e immutabile anche nel database, nuova versione, follow-up, Oggi con annullamento e riattivazione, cronologia, backup → modifiche → ripristino → verifica dei valori, export, chiusura dall'interfaccia.
 
 ## Criteri di accettazione AC01–AC10
 
-Tutti **PASS** con le evidenze elencate nella PR. Due precisazioni:
+Tutti **PASS**; la matrice con le evidenze è nella Pull Request della V1. Precisazioni:
 
-- **AC02/AC03** sono verificati con la sorgente simulata e con il contratto HTTP dell'adapter Google (sole richieste GET, paginazione completa, mappatura degli errori). La prova con l'account Google reale richiede le credenziali del proprietario.
-- **AC04** (circa 60 secondi per caso) è misurato come numero di passi: due azioni per collegare o creare la famiglia dall'evento. Il cronometraggio umano resta consigliato.
+- **AC02/AC03** sono verificati con la sorgente simulata e con l'adapter Google a livello HTTP (sole richieste GET verso l'API Calendar, paginazione completa, mappatura degli errori). La prova con l'account Google reale richiede le credenziali del proprietario.
+- **AC04/AC05**: i tempi (circa 60 secondi per collegare o creare la famiglia, resoconto in 1–2 minuti) sono verificati come numero di passi, cioè due azioni con i campi già proposti, e come tempi di risposta del server. Resta consigliato il cronometraggio di Ionut al primo uso reale.
 
 ## Limitazioni note
 
@@ -49,11 +54,12 @@ Tutti **PASS** con le evidenze elencate nella PR. Due precisazioni:
 - Il database non è cifrato da SQLite: protezione affidata all'account Windows e alla cifratura del disco (SPEC §9.1).
 - Il backup su un supporto esterno è manuale: download del backup dalla pagina Dati.
 - Due processi aperti sullo stesso database da programmi esterni (per esempio un visualizzatore SQLite) impediscono il ripristino finché non vengono chiusi; l'app lo segnala senza toccare i dati.
+- I recapiti estratti dal testo degli eventi sono suggerimenti prudenti da verificare: un numero attaccato ad altre lettere o cifre può non essere riconosciuto.
 
 ## NEXT ACTION (proprietario)
 
-1. Rivedere e unire la PR del branch `v1-implementation` su `main`.
-2. Sul PC di Ionut l'installazione è già pronta: `.venv` nella cartella del repository e collegamento «Avvia KITE Admissions» sul Desktop (`OneDrive\Desktop`). Il database reale nasce al primo avvio in `%LOCALAPPDATA%\KITEAdmissions`. Su un altro PC: `scripts\install.ps1`.
+1. Rivedere e unire su `main` la Pull Request della V1.
+2. Su questo PC l'installazione è presente: `.venv` nel repository e collegamento «Avvia KITE Admissions» sul Desktop (`OneDrive\Desktop`); il database reale è stato creato al primo avvio in `%LOCALAPPDATA%\KITEAdmissions` ed è ancora vuoto al 2026-09-27. Un'istanza avviata prima della correzione va chiusa («Chiudi applicazione») e riaperta dal collegamento per usare il codice corretto. Su un altro PC: `scripts\install.ps1`.
 3. Configurare Google Calendar (README, sezione «Configurazione di Google Calendar») e fare il primo aggiornamento reale: verificare che gli eventi della segreteria compaiano in anteprima e che un import selezionato funzioni.
 4. Scegliere la destinazione della copia esterna periodica dei backup.
 
