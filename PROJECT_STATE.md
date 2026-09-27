@@ -2,68 +2,62 @@
 
 ## Status
 
-`V1_COMPLETE`
+`V1_1_COMPLETE` — in Pull Request verso `main`, in attesa di revisione e merge da parte di Ionut (nessun merge automatico).
 
-Verificato il **2026-09-27 (Europe/Rome)** con la revisione indipendente finale del branch `v1-implementation` rispetto a [SPEC.md](SPEC.md): codice, test automatici, collaudo end-to-end e criteri AC01–AC10. La V1 è in una Pull Request da `v1-implementation` verso `main`, in attesa di revisione e merge da parte di Ionut (nessun merge automatico).
+- **V1.0.0** (`7452456`, schema 1): su `main`, in uso reale dal collegamento «Avvia KITE Admissions».
+- **v1.1 — Interview Workflow** (Issue #2, branch `v1.1-interview-workflow`, schema 2): completata il **2026-09-27 (Europe/Rome)** nel worktree separato `C:\Users\ionut\kite-admissions-v1.1`, con test automatici, collaudo su Waitress con dati sintetici e revisione indipendente contro la specifica.
 
-[SPEC.md](SPEC.md) resta la fonte autorevole (versione 0.2 del 25 settembre 2026, invariata). Le diciture della sua intestazione («da validare», «Nessuna implementazione avviata») sono storiche e restano come scritte: lo stato corrente è quello di questa pagina. Le scelte tecniche emerse durante lo sviluppo sono in [DECISIONS.md](DECISIONS.md) (DEC-013 e seguenti).
+Fonti: [SPEC.md](SPEC.md) (V1, con l'addendum v1.1 al §14), [specifica operativa v1.1](docs/PROPOSTA_V1.1_INTERVIEW_WORKFLOW.md) (versione 1.0, approvata dal titolare il 27/09/2026, OD-1…OD-7 risolte), [DECISIONS.md](DECISIONS.md) (DEC-024…DEC-034 per la v1.1). Le diciture storiche nell'intestazione della SPEC («da validare», «Nessuna implementazione avviata») restano come scritte: lo stato corrente è questa pagina.
 
-## Architettura (come da SPEC)
+## Architettura (invariata)
 
-- Python 3.14 + Flask + SQLite, pagine HTML generate dal server, poco JavaScript.
-- Waitress in un solo processo su `127.0.0.1`, istanza singola, avvio da collegamento senza console.
-- Un solo utilizzatore, nessun login, nessun RBAC, nessun cloud.
-- Google Calendar → CRM in sola lettura (scope `calendar.events.readonly` e `calendar.calendarlist.readonly`).
-- Sette tabelle: Family, StudentLead, Appointment, Offer, FollowUp, Interaction, CalendarExclusion.
-- Viste: Oggi, Appuntamenti, Famiglie, Scheda famiglia + pannello «Dati e collegamento Google».
+- Python 3.14 + Flask + SQLite, pagine HTML generate dal server, poco JavaScript; Waitress su `127.0.0.1`, istanza singola.
+- Un solo utilizzatore, nessun login, nessun RBAC, nessun cloud; Google Calendar → CRM in sola lettura.
+- **Sette tabelle**: Family, StudentLead, Appointment, Offer, FollowUp, Interaction, CalendarExclusion. Nessuna tabella nuova nella v1.1.
+- Viste: Oggi, Appuntamenti (con la pagina **Colloquio**), Famiglie, Scheda famiglia + pannello «Dati e collegamento Google».
 
-## Implementato
+## v1.1 — implementato
 
-| Slice | Contenuto |
-|---|---|
-| 0 — Foundations | Schema V1 `STRICT` con FK su ogni connessione, FK composite figlio/famiglia, trigger di congelamento; versione in `PRAGMA user_version`, migrazioni con copia preventiva; ispezione del database e modalità ripristino; protezioni locali (loopback, Host, Origin/Referer, CSRF, CSP); launcher a istanza singola; `scripts/install.ps1` |
-| 1 — Family + StudentLead | Famiglie con recapiti facoltativi, doppioni per telefono/email/etichetta/nome bambino, ricerca e filtri, archiviazione; richieste per figlio e anno, quattro stati con transizioni atomiche in Interaction |
-| 2 — Google Calendar import | Adapter solo GET, OAuth desktop, credenziali DPAPI; aggiornamento con anteprima senza preselezioni, verifica per ID, annullamenti e riattivazioni con una Interaction ciascuno, errori → «Non verificato», ricorrenze, giorni interi, esclusioni |
-| 3 — Appuntamenti | Elenco e dettaglio, suggerimenti e ricerca, collegamento, creazione famiglia dall'evento in transazione, cambio collegamento, preparazione e resoconto separati dai dati Google |
-| 4 — Scheda + cronologia | Scheda completa, note e comunicazioni manuali, cronologia ricavata dalle registrazioni senza copie |
-| 5 — Offerte | Bozza, «Segna come comunicata» idempotente, contenuto congelato (server e database), versioni, proposta corrente, ritiro |
-| 6 — FollowUp + Oggi | Follow-up con esito, regole del prossimo passo, vista Oggi operativa, resoconto con prossimo passo |
-| 7 — Backup/export/restore | Backup automatico giornaliero, manuale e pre-operazione con conservazione; ripristino B2 verificato anche con database assente o danneggiato; verifica post-ripristino; export CSV/JSON; eliminazione definitiva con esclusione degli eventi |
-
-## Revisione indipendente finale (2026-09-27)
-
-- Rilettura critica di tutto il codice rispetto alla SPEC: database e vincoli, famiglie e richieste, Google Calendar, appuntamenti, cronologia, offerte, follow-up e Oggi, backup e ripristino, sicurezza locale.
-- **Un difetto trovato e corretto.** L'estrazione deterministica dei recapiti dal testo degli eventi scambiava date (`12/03/2019`, `25.09.2026`) e anni scolastici (`2026/2027`) per numeri di telefono, e il primo «telefono» trovato precompilava il modulo «Crea famiglia dall'evento»: un recapito inventato (SPEC §4.3, §5). Ora date e anni scolastici sono separati dal testo prima della ricerca dei numeri; i numeri veri restano riconosciuti.
-- Test aggiunti: regressione del difetto; annullamento e riattivazione di un evento spostato fuori finestra, letti per ID; aggiornamento completo attraverso l'adapter Google su HTTP simulato (tutte le pagine, sole richieste GET, 404 che non vale come annullamento); ripristino rifiutato mentre è in corso un aggiornamento Calendar.
+| Slice | Contenuto | Commit |
+|---|---|---|
+| 1 — Fondamenta | Schema 2 solo additivo (colonne, indice, trigger dei follow-up, trigger di congelamento ricreato), `catalog.py`, validazione dei JSON, ripristino di backup V1 con migrazione e `RestoreError` se fallisce | `30b2c4f` |
+| 2 — Alunno e famiglia | Data di nascita facoltativa, età e verifica informativa (31/12, 30/04, 29 febbraio), scuola e classe attuali, lingue dichiarate, profilo, flag neutro di approfondimento; fonte a lista chiusa con dettaglio | `3c30266` |
+| 3 — Economia | Offerta in tre blocchi, riduzioni a righe con motivo, quota d'iscrizione, «Autorizzata da» obbligatoria per le condizioni discrezionali e non ereditata dalle nuove versioni, avviso di coerenza, nessuno sconto calcolato | `389a84b` |
+| 4 — Colloquio | Pagina Colloquio (Prepara incontro + sezioni A–K), «Salva» atomico multi-record con impronte e revisioni, conflitti con scelta esplicita, «Concludi colloquio» con fino a tre follow-up (responsabile, legame con l'incontro), «Attendere risposta della famiglia», materiale, verifiche, «non prosegue», regola del prossimo passo anche per la route V1, azioni economiche dal colloquio, scheda «Colloquio» nella pagina appuntamento | `2455c7a` |
+| 5 — Riepilogo e integrazione | Riepilogo (≤ 12 righe + 2 per alunno), «Appuntamenti e colloqui» e «Ultimo colloquio» nella scheda, cronologia, Oggi (link al colloquio, responsabile), export con le colonne nuove, conteggi dell'eliminazione, documentazione, collaudo | vedi `git log` |
 
 ## Test
 
-- `.venv\Scripts\python.exe -m pytest`: **170 test verdi** (166 della sessione di sviluppo + 4 della revisione), su dati sintetici e cartelle temporanee.
-- Collaudo end-to-end su server Waitress reale, con cartella dati separata, calendario di prova da file e soli dati sintetici: **42/42 controlli superati**. Coperti: database nuovo, avvio a istanza singola solo su `127.0.0.1` (porta irraggiungibile dagli indirizzi di rete del PC), famiglie e richieste, import selettivo, cinque collegamenti o creazioni dall'evento, visita, offerta comunicata con doppio clic e immutabile anche nel database, nuova versione, follow-up, Oggi con annullamento e riattivazione, cronologia, backup → modifiche → ripristino → verifica dei valori, export, chiusura dall'interfaccia.
+- `.venv\Scripts\python.exe -m pytest` nel worktree: **298 test verdi** (i 170 della V1, con gli aggiornamenti dichiarati nella Issue, e 128 nuovi della v1.1 in `tests/test_v11_*.py`), su dati sintetici e cartelle temporanee.
+- Test V1 aggiornati, come previsto dalla specifica (§10): `test_foundations.py` (versione dello schema e migrazioni su una versione successiva finta), `test_e2e.py` (fonte «Evento / open day»), `test_linking.py`, `test_timeline.py` e `tests/dataset.py` (prossimo passo per le visite svolte di appuntamenti collegati, OD-5).
 
-## Criteri di accettazione AC01–AC10
+## Collaudo v1.1 (2026-09-27)
 
-Tutti **PASS**; la matrice con le evidenze è nella Pull Request della V1. Precisazioni:
+Su server Waitress reale, cartelle dati di prova nello scratchpad, calendario di prova da file, soli dati sintetici:
 
-- **AC02/AC03** sono verificati con la sorgente simulata e con l'adapter Google a livello HTTP (sole richieste GET verso l'API Calendar, paginazione completa, mappatura degli errori). La prova con l'account Google reale richiede le credenziali del proprietario.
-- **AC04/AC05**: i tempi (circa 60 secondi per collegare o creare la famiglia, resoconto in 1–2 minuti) sono verificati come numero di passi, cioè due azioni con i campi già proposti, e come tempi di risposta del server. Resta consigliato il cronometraggio di Ionut al primo uso reale.
+- **51/51 controlli** dello scenario completo: avvio v1.1, import selettivo, tre incontri della stessa famiglia, Prepara incontro con «Da chiedere», sezioni A–K con salvataggi intermedi, record non toccati non riscritti, conflitto fra due schede e scelta «usa gli attuali», doppio invio, nessuna riga di cronologia per i salvataggi, proposta con riduzione promozionale rifiutata senza autorizzazione e comunicata con doppio clic (una sola data, congelata anche nel database), chiusura con materiale, verifiche, «Attendere risposta» e completamento di un follow-up vecchio, doppio «Concludi», riepilogo ≤ 12 righe, storico, cronologia, Oggi, «Cambia collegamento», backup, export, tempi < 2 s, CSP.
+- **Compatibilità con la V1 autentica** (codice `7452456` estratto con `git archive` e avviato su una cartella di prova): dati e backup creati dalla 1.0.0; la v1.1 avviata su quei dati crea la copia «pre-migrazione» (schema 1), migra allo schema 2 con valori V1 identici, integrità e foreign key OK, 7 tabelle; il backup V1 si ripristina nella v1.1, viene migrato, segnala famiglie mancanti e riapparse, e il colloquio funziona sui dati ripristinati (23/23 controlli, dopo la correzione di un'attesa errata dello script).
+- `app.js`: sintassi verificata con Node e comportamento provato su un DOM simulato (scelte rapide, data di «Attendere risposta» secondo la tempistica, «non prosegue», protezione dall'uscita). Struttura HTML bilanciata sulle pagine principali.
+- **Un difetto trovato nel collaudo e corretto**: un incontro futuro soltanto preparato veniva considerato «colloquio più recente» e toglieva i dati attuali dell'alunno dal riepilogo della visita già svolta. Ora conta l'ultimo colloquio avvenuto; test di regressione aggiunto.
 
 ## Limitazioni note
 
-- Nessuna prova ancora eseguita contro l'API Google reale: servono progetto Google Cloud, client OAuth «App desktop» e account con accesso al calendario della segreteria (vedi README). In stato OAuth «Test» Google fa scadere l'autorizzazione dopo 7 giorni.
-- Il database non è cifrato da SQLite: protezione affidata all'account Windows e alla cifratura del disco (SPEC §9.1).
-- Il backup su un supporto esterno è manuale: download del backup dalla pagina Dati.
-- Due processi aperti sullo stesso database da programmi esterni (per esempio un visualizzatore SQLite) impediscono il ripristino finché non vengono chiusi; l'app lo segnala senza toccare i dati.
-- I recapiti estratti dal testo degli eventi sono suggerimenti prudenti da verificare: un numero attaccato ad altre lettere o cifre può non essere riconosciuto.
+- Il controllo visivo nel browser (impaginazione della pagina Colloquio su portatile) e il cronometraggio reale di Ionut (chiusura in 3 azioni, riepilogo letto in 10–15 secondi) restano da fare al primo uso: l'estensione del browser non era collegata durante il collaudo.
+- Nessuna prova ancora eseguita contro l'API Google reale (vedi README); in stato OAuth «Test» l'autorizzazione scade dopo 7 giorni.
+- Il database non è cifrato da SQLite; il backup esterno è manuale.
+- I dati dell'alunno nel riepilogo sono quelli attuali: un riepilogo vecchio non ricostruisce ciò che si sapeva allora (limite accettato nella specifica).
+- Nessun versionamento del singolo colloquio (come per il resoconto V1).
 
 ## NEXT ACTION (proprietario)
 
-1. Rivedere e unire su `main` la Pull Request della V1.
-2. Su questo PC l'installazione è presente: `.venv` nel repository e collegamento «Avvia KITE Admissions» sul Desktop (`OneDrive\Desktop`); il database reale è stato creato al primo avvio in `%LOCALAPPDATA%\KITEAdmissions` ed è ancora vuoto al 2026-09-27. Un'istanza avviata prima della correzione va chiusa («Chiudi applicazione») e riaperta dal collegamento per usare il codice corretto. Su un altro PC: `scripts\install.ps1`.
-3. Configurare Google Calendar (README, sezione «Configurazione di Google Calendar») e fare il primo aggiornamento reale: verificare che gli eventi della segreteria compaiano in anteprima e che un import selezionato funzioni.
-4. Scegliere la destinazione della copia esterna periodica dei backup.
+1. Rivedere e unire su `main` la Pull Request della v1.1.
+2. Dopo il merge: «Chiudi applicazione», `git -C C:\Users\ionut\kite-admissions pull`, riavvio dal collegamento; controllare in «Dati e Google» la copia «pre-migrazione» e che i conteggi delle tabelle non siano cambiati. Ritorno alla V1 descritto nel README.
+3. Verificare con chi segue la privacy della scuola che l'informativa Admissions copra le nuove categorie (data di nascita del minore, scuola attuale, lingue, esigenze, note del colloquio).
+4. Al primo uso reale: provare il colloquio su un portatile e cronometrare chiusura e lettura del riepilogo; confrontare ogni anno le regole dell'età con la circolare iscrizioni.
+5. Restano validi i passi V1 non ancora fatti: configurazione di Google Calendar e destinazione della copia esterna dei backup.
 
 ## Vincoli che restano validi
 
 - Nessuna funzionalità V2 (SPEC §12), nessun cloud o accesso LAN, nessuna scrittura verso Google.
 - Nessun dato reale delle famiglie, database, backup, export, token o credenziale in Git.
+- Codice di sviluppo mai avviato sulla cartella dati reale (DEC-034).

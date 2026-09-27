@@ -70,11 +70,16 @@ class _FormParser(HTMLParser):
 
 
 def read_form(html: str, form_id: str) -> dict[str, Any]:
-    """Campi del modulo con i valori mostrati: stringa, oppure lista per i nomi ripetuti."""
+    """Campi del modulo con i valori mostrati: stringa, oppure lista per i nomi ripetuti.
+
+    Il token CSRF resta fuori: lo aggiunge il client di test, come per gli altri invii.
+    """
     parser = _FormParser(form_id)
     parser.feed(html)
     result: dict[str, Any] = {}
     for name, value in parser.pairs:
+        if name == "csrf_token":
+            continue
         if name in result:
             current = result[name]
             result[name] = (current if isinstance(current, list) else [current]) + [value]

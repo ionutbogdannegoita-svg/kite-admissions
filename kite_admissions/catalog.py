@@ -163,6 +163,8 @@ WAIT_ACTION = "ATTESA"
 WAIT_NOTE = "Attendere risposta della famiglia"
 WAIT_DAYS = {"IMMEDIATA": 3, "POCHI_GIORNI": 3, "ALCUNE_SETTIMANE": 14, "DA_DEFINIRE": 7}
 WAIT_DEFAULT_DAYS = 7
+# Passo creato alla conclusione dalle domande «da verificare» (sezione H): follow-up ALTRO.
+VERIFY_NOTE = "Verificare e rispondere"
 
 
 @dataclass(frozen=True)

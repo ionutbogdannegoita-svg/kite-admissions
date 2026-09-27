@@ -5,8 +5,8 @@
     <div class="summary-head">Riepilogo{% if not summary.latest and summary.structured %} <span class="item-meta">· colloquio precedente</span>{% endif %}</div>
     <dl class="summary-lines">
       {% for line in summary.lines %}
-        <dt class="{{ 'sl-' ~ line.kind if line.kind }}">{{ line.label }}</dt>
-        <dd class="{{ 'sl-' ~ line.kind if line.kind }}">{{ line.text }}</dd>
+        <dt{% if line.kind %} class="sl-{{ line.kind }}"{% endif %}>{{ line.label }}</dt>
+        <dd{% if line.kind %} class="sl-{{ line.kind }}"{% endif %}>{{ line.text }}</dd>
       {% endfor %}
     </dl>
   </div>

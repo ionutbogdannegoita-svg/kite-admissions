@@ -2,6 +2,7 @@
 {% from "_macros.html" import csrf, lead_badge %}
 {% from "_appt.html" import when, status_badges %}
 {% from "appointments/_interview_lead_fields.html" import age_line %}
+{% from "appointments/_interview_summary.html" import compact %}
 {% block title %}{{ family.display_name }}{% endblock %}
 {% block content %}
   <div class="page-head">
@@ -97,27 +98,32 @@
 
       {% include "family/_followups.html" %}
 
+      {# v1.1: storico dei colloqui, un incontro per riga (nessuno sovrascrive l'altro). #}
       <section class="card" id="appuntamenti">
         <div class="card-head">
-          <h2>Appuntamenti e visite <span class="count {{ 'zero' if not appointments }}">{{ appointments|length }}</span></h2>
+          <h2>Appuntamenti e colloqui <span class="count {{ 'zero' if not history }}">{{ history|length }}</span></h2>
         </div>
-        {% if appointments %}
-          <table class="list">
-            <thead><tr><th>Quando</th><th>Evento</th><th>Resoconto</th></tr></thead>
+        {% if history %}
+          <table class="list history">
+            <thead><tr><th>Quando</th><th>Incontro</th><th>Esito</th><th>Interesse</th><th>Ostacolo</th><th>Prossimi passi</th></tr></thead>
             <tbody>
-              {% for a in appointments %}
+              {% for item in history %}
+                {% set a = item.appointment %}
                 <tr class="{{ 'muted-row' if a.src_status == 'CANCELLED_SOURCE' }}">
-                  <td class="nowrap">{{ when(a) }}</td>
-                  <td><a href="{{ url_for('appointments.detail', appointment_id=a.id) }}">{{ a.src_title or '(senza titolo)' }}</a>
-                    <div>{{ status_badges(a) }}{% if a.lead_name %} <span class="item-meta">· {{ a.lead_name }}</span>{% endif %}</div></td>
+                  <td class="nowrap"><a href="{{ url_for('appointments.detail', appointment_id=a.id) }}#colloquio">{{ when(a) }}</a></td>
+                  <td>{{ item.kind or 'Incontro' }}{% if a.lead_name %} · {{ a.lead_name }}{% endif %}
+                    <div class="item-meta">{{ a.src_title or '(senza titolo)' }} {{ status_badges(a) }}</div>
+                    {% if not item.structured and a.visit_report %}<div class="item-meta pre">{{ a.visit_report|truncate(220) }}</div>{% endif %}</td>
                   <td>
                     {% if a.visit_outcome %}
                       <span class="badge badge-{{ a.visit_outcome|lower }}">{{ a.visit_outcome|label }}</span>
-                      {% if a.visit_report %}<div class="item-meta pre">{{ a.visit_report|truncate(220) }}</div>{% endif %}
                     {% elif a.id in needs_report %}
-                      <a class="badge badge-warn" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#resoconto">Resoconto da completare</a>
+                      <a class="badge badge-warn" href="{{ url_for('appointments.interview', appointment_id=a.id, sezione='k') }}">Resoconto da completare</a>
                     {% else %}<span class="muted">—</span>{% endif %}
                   </td>
+                  <td>{{ item.interest or '—' }}</td>
+                  <td>{{ item.obstacle or '—' }}</td>
+                  <td>{% for step in item.steps %}<div class="small">{{ step_label(step) }} {{ 'riesame' if step_label(step) == wait_note else 'entro' }} {{ step.due_on|d }} · {{ step.status|label|lower }}</div>{% else %}<span class="muted">—</span>{% endfor %}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -172,6 +178,12 @@
     </div>
 
     <aside>
+      {% if last_meeting %}
+        <section class="card" id="ultimo-colloquio">
+          <h2>Ultimo colloquio</h2>
+          {{ compact(last_meeting_lines, last_meeting) }}
+        </section>
+      {% endif %}
       <section class="card {{ 'alert' if next_step.missing }}">
         <h2>Prossimo passo</h2>
         {% if next_step.closed %}

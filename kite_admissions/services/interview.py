@@ -1065,7 +1065,7 @@ def _conclude(db: Database, ctx: Context, values: Mapping[str, Any], submission:
         if not closing["verify_due_on"]:
             raise ValidationError("Verifiche: indica entro quando rispondere alla famiglia.", "verify_due_on")
         steps.append({"id": submission.verify_id, "action": "ALTRO", "due_on": closing["verify_due_on"],
-                      "note": "Verificare e rispondere: " + "; ".join(rows),
+                      "note": f"{catalog.VERIFY_NOTE}: " + "; ".join(rows),
                       "student_lead_id": values["student_lead_id"],
                       "assignee": closing["verify_assignee"] or catalog.DEFAULT_ASSIGNEE})
     for step in steps:
@@ -1115,9 +1115,12 @@ def _conclude(db: Database, ctx: Context, values: Mapping[str, Any], submission:
 # --- Dati della pagina ----------------------------------------------------------------------
 
 def step_label(row: Mapping[str, Any]) -> str:
-    """Azione del follow-up; «Attendere risposta della famiglia» riconoscibile anche se è un ALTRO."""
-    if row["action"] == "ALTRO" and (row["note"] or "").startswith(catalog.WAIT_NOTE):
-        return catalog.WAIT_NOTE
+    """Azione del follow-up; «Attendere risposta della famiglia» e «Verificare e rispondere»
+    restano riconoscibili anche se sono follow-up ALTRO con nota predefinita."""
+    if row["action"] == "ALTRO":
+        for text in (catalog.WAIT_NOTE, catalog.VERIFY_NOTE):
+            if (row["note"] or "").startswith(text):
+                return text
     return label(row["action"])
 
 
@@ -1159,6 +1162,17 @@ def family_interviews(db: Database, family_id: str) -> list[sqlite3.Row]:
 def is_meeting(row: Mapping[str, Any]) -> bool:
     """Incontro con un colloquio o un resoconto registrato."""
     return bool(row["visit_outcome"] or row["visit_report"] or has_content(loads(row["interview"])))
+
+
+def is_held(row: Mapping[str, Any], now: datetime) -> bool:
+    """Colloquio avvenuto: con esito, oppure con contenuto e già iniziato. Un incontro futuro solo
+    preparato non rende «precedenti» i colloqui già svolti."""
+    if row["visit_outcome"]:
+        return True
+    if not is_meeting(row):
+        return False
+    start = row["src_start_at"] or (f"{row['src_start_date']}T00:00:00.000000Z" if row["src_start_date"] else None)
+    return start is not None and start <= stamp(now)
 
 
 def to_ask(ctx: Context, leads: list[sqlite3.Row], interviews: list[Mapping[str, Any]]) -> list[str]:
@@ -1479,8 +1493,8 @@ def _step_text(row: Mapping[str, Any]) -> str:
     if row["assignee"]:
         text += f" · {row['assignee']}"
     note = row["note"] or ""
-    if waiting:
-        note = note[len(catalog.WAIT_NOTE):].lstrip(" —")
+    if step_label(row) in (catalog.WAIT_NOTE, catalog.VERIFY_NOTE):
+        note = note[len(step_label(row)):].lstrip(" —:")
     if note:
         text += f" · «{note if len(note) <= 60 else note[:59] + '…'}»"
     return f"{text} [{label(row['status'])}]"
@@ -1516,8 +1530,9 @@ def summary(db: Database, appointment: Mapping[str, Any], now: datetime) -> Summ
         return Summary([], SUMMARY_LINES, False, False)
     family_id = appointment["family_id"]
     rows = family_interviews(db, family_id) if family_id else []
-    meetings = sorted((row for row in rows if is_meeting(row)), key=_moment)
-    latest = not meetings or meetings[-1]["id"] == appointment["id"]
+    meetings = sorted((row for row in rows if is_held(row, now)), key=_moment)
+    # Più recente: nessun altro colloquio avvenuto dopo questo (un incontro futuro solo preparato non conta).
+    latest = not any(row["id"] != appointment["id"] and _moment(row) > _moment(appointment) for row in meetings)
     steps = [_step_text(row) for row in meeting_followups(db, appointment["id"])]
     when = appointment["visited_at"] or appointment["src_start_at"]
     when_text = format_datetime(when) if when else format_date(appointment["src_start_date"])
@@ -1699,6 +1714,7 @@ def history(db: Database, family_id: str) -> list[HistoryRow]:
     return result
 
 
-def latest_meeting(db: Database, family_id: str) -> sqlite3.Row | None:
-    meetings = sorted((row for row in family_interviews(db, family_id) if is_meeting(row)), key=_moment)
+def latest_meeting(db: Database, family_id: str, now: datetime) -> sqlite3.Row | None:
+    """«Ultimo colloquio» della scheda: l'ultimo avvenuto (con esito, o con contenuto e già iniziato)."""
+    meetings = sorted((row for row in family_interviews(db, family_id) if is_held(row, now)), key=_moment)
     return meetings[-1] if meetings else None

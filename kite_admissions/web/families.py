@@ -14,6 +14,7 @@ from ..services import families as family_service
 from ..services import followups as followup_service
 from ..services import today as today_service
 from ..services import interactions as interaction_service
+from ..services import interview as interview_service
 from ..services import leads as lead_service
 from ..services import offers as offer_service
 from ..services import timeline as timeline_service
@@ -130,6 +131,7 @@ def detail(family_id: str):
     now = state().now()
     appointments = appointment_service.family_appointments(db, family_id)
     leads = lead_service.family_leads(db, family_id)
+    last_meeting = interview_service.latest_meeting(db, family_id, now)
     return render_template(
         "family/detail.html", active="families", family=family,
         leads=leads, has_contact=family_service.has_contact(family),
@@ -137,6 +139,9 @@ def detail(family_id: str):
         years=_year_options(), grades=catalog.GRADE_SUGGESTIONS, new_lead_id=new_id(),
         today=rome_today(now).isoformat(),
         appointments=appointments,
+        history=interview_service.history(db, family_id),
+        last_meeting=last_meeting,
+        last_meeting_lines=interview_service.compact_summary(db, last_meeting) if last_meeting else [],
         needs_report={row["id"] for row in appointments if appointment_service.needs_report(row, now)},
         timeline=timeline_service.family_timeline(db, family_id),
         offer_scopes=offer_service.family_offer_scopes(db, family_id),

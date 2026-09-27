@@ -274,15 +274,19 @@ def set_archived(db: Database, family_id: str, archived: bool, *, now: datetime)
 
 
 def dossier_counts(db: Database, family_id: str) -> dict[str, int]:
-    """Quanti dati locali coinvolge l'eliminazione definitiva (SPEC §9.4)."""
-    appointment_ids = [row[0] for row in db.all("SELECT id FROM Appointment WHERE family_id = ?", (family_id,))]
+    """Quanti dati locali coinvolge l'eliminazione definitiva (SPEC §9.4).
+
+    «Resoconti» conta anche i colloqui v1.1 con contenuto e senza esito.
+    """
+    from .appointments import has_report  # import locale: evita il ciclo tra moduli
+
+    appointments = db.all("SELECT * FROM Appointment WHERE family_id = ?", (family_id,))
+    appointment_ids = [row["id"] for row in appointments]
     marks = ", ".join("?" for _ in appointment_ids) or "NULL"
     return {
         "richieste": db.scalar("SELECT count(*) FROM StudentLead WHERE family_id = ?", (family_id,)),
         "appuntamenti": len(appointment_ids),
-        "resoconti": db.scalar(
-            "SELECT count(*) FROM Appointment WHERE family_id = ? AND (visit_outcome IS NOT NULL "
-            "OR visit_report IS NOT NULL OR local_observations IS NOT NULL)", (family_id,)),
+        "resoconti": sum(1 for row in appointments if has_report(row)),
         "offerte": db.scalar("SELECT count(*) FROM Offer WHERE family_id = ?", (family_id,)),
         "follow-up": db.scalar("SELECT count(*) FROM FollowUp WHERE family_id = ?", (family_id,)),
         "attività in cronologia": db.scalar(

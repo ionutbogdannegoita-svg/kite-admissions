@@ -229,7 +229,8 @@ def _all_catalog_text():
     for entries in LISTS.values():
         texts += [entry.code for entry in entries] + [entry.label for entry in entries]
     for value in (catalog.CONTACT_SOURCES, catalog.ASSIGNEE_SUGGESTIONS, catalog.AUTHORIZER_SUGGESTIONS,
-                  catalog.GRADE_SUGGESTIONS, catalog.CURRENT_GRADE_SUGGESTIONS, (catalog.WAIT_NOTE,)):
+                  catalog.GRADE_SUGGESTIONS, catalog.CURRENT_GRADE_SUGGESTIONS,
+                  (catalog.WAIT_NOTE, catalog.VERIFY_NOTE)):
         texts += list(value)
     texts += [item.label for item in catalog.QUICK_OUTCOMES] + [item.note for item in catalog.QUICK_OUTCOMES]
     return [text.casefold() for text in texts]
