@@ -1,0 +1,41 @@
+{# Proposta economica in blocchi (v1.1, OD-3): listino standard · condizione riservata · importo finale comunicato. #}
+
+{% macro offer_blocks(offer) -%}
+  {% set reductions = offer_reductions(offer) %}
+  {% set services = offer_services(offer) %}
+  <div class="price-blocks">
+    <div class="price-block">
+      <div class="price-title">Listino standard</div>
+      {% if offer.standard_fee_cents is not none %}
+        <div>Retta {{ offer.standard_fee_cents|euro }} <span class="muted">{{ offer.periodicity|label }}</span></div>
+      {% else %}<div class="muted">Retta di listino non indicata</div>{% endif %}
+    </div>
+    <div class="price-block {{ 'reserved' if reductions }}">
+      <div class="price-title">Condizione riservata</div>
+      {% for item in reductions %}
+        <div>{{ item.reason|cat('REDUCTION_REASONS') }} −{{ item.amount_cents|euro }}{% if item.note %} <span class="item-meta">· {{ item.note }}</span>{% endif %}</div>
+      {% else %}
+        {% set discount = offer_discount(offer) %}
+        {% if discount %}<div>Differenza dal listino: sconto {{ discount|euro }}</div>{% else %}<div class="muted">Nessuna</div>{% endif %}
+      {% endfor %}
+      {% if offer.authorized_by %}<div class="item-meta">Autorizzata da: {{ offer.authorized_by }}</div>
+      {% elif offer_needs_authorization(reductions) %}<div><span class="badge badge-warn">Manca «Autorizzata da»</span></div>{% endif %}
+    </div>
+    <div class="price-block final">
+      <div class="price-title">Importo finale comunicato</div>
+      <div class="amount">{{ offer.proposed_fee_cents|euro if offer.proposed_fee_cents is not none else '—' }} <span class="small muted">{{ offer.periodicity|label }}</span></div>
+      {% if offer.enrollment_fee_cents is not none %}<div>Quota d'iscrizione {{ offer.enrollment_fee_cents|euro }} <span class="muted">una tantum</span></div>{% endif %}
+      {% if offer.valid_until %}<div class="item-meta">valida fino al {{ offer.valid_until|d }}</div>{% endif %}
+    </div>
+  </div>
+  {% if services %}
+    <ul class="small">
+      {% for service in services %}
+        <li>{{ service.description }} — {{ 'incluso' if service.included else 'aggiuntivo' }}{% if service.amount_cents is not none %} · {{ service.amount_cents|euro }} {{ service.periodicity|label }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if offer.conditions %}<div class="small pre">{{ offer.conditions }}</div>{% endif %}
+  {% set warning = offer_warning(offer) %}
+  {% if warning %}<div class="flash flash-warning small">{{ warning }}</div>{% endif %}
+{%- endmacro %}

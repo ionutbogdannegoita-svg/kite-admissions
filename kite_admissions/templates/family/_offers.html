@@ -1,4 +1,5 @@
 {% from "_macros.html" import csrf %}
+{% from "family/_offer_blocks.html" import offer_blocks %}
 <section class="card" id="offerte">
   <div class="card-head">
     <h2>Proposte economiche</h2>
@@ -9,7 +10,7 @@
   {% endif %}
   {% for scope in offer_scopes %}
     {% set current = scope.current %}
-    <h3>{{ 'Per ' ~ scope.lead_name if scope.lead_id else 'Proposta familiare' }}</h3>
+    <h3>{{ scope.heading }}</h3>
     <p class="small">
       {% if current %}Proposta corrente: <strong>v{{ current.version_no }}</strong> · {{ current.proposed_fee_cents|euro }} {{ current.periodicity|label }} · comunicata il {{ current.communicated_at|dt }}
       {% elif scope.latest_sent %}<span class="badge badge-warn">Nessuna proposta corrente</span> l'ultima comunicata (v{{ scope.latest_sent.version_no }}) è stata ritirata.
@@ -23,22 +24,9 @@
             <strong>v{{ offer.version_no }}</strong>
             <span class="badge badge-{{ offer.status|lower }}">{{ offer.status|label }}</span>
             {% if is_current %}<span class="badge badge-current">Corrente</span>{% elif offer.status == 'COMUNICATA' %}<span class="badge">Sostituita</span>{% endif %}
-            {% if offer.valid_until %}<span class="item-meta">valida fino al {{ offer.valid_until|d }}</span>{% endif %}
           </div>
-          <div class="amount">{{ offer.proposed_fee_cents|euro if offer.proposed_fee_cents is not none else '—' }} <span class="small muted">{{ offer.periodicity|label }}</span></div>
         </div>
-        <div class="small">
-          {% if offer.standard_fee_cents is not none %}Retta standard {{ offer.standard_fee_cents|euro }} {{ offer.periodicity|label }}{% set discount = offer_discount(offer) %}{% if discount %} · sconto {{ discount|euro }}{% endif %}{% endif %}
-        </div>
-        {% set services = offer_services(offer) %}
-        {% if services %}
-          <ul class="small">
-            {% for service in services %}
-              <li>{{ service.description }} — {{ 'incluso' if service.included else 'aggiuntivo' }}{% if service.amount_cents is not none %} · {{ service.amount_cents|euro }} {{ service.periodicity|label }}{% endif %}</li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-        {% if offer.conditions %}<div class="small pre">{{ offer.conditions }}</div>{% endif %}
+        {{ offer_blocks(offer) }}
         <div class="item-meta">
           {% if offer.communicated_at %}Comunicata il {{ offer.communicated_at|dt }} da {{ offer.communicated_by }}{% if offer.communication_channel %} · {{ offer.communication_channel }}{% endif %}{% else %}Bozza creata {{ offer.created_at|dt }}{% endif %}
           {% if offer.status == 'RITIRATA' %} · ritirata il {{ offer.withdrawn_at|dt }}: {{ offer.withdrawal_reason }}{% endif %}

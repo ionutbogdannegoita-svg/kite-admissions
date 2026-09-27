@@ -22,7 +22,11 @@ from .families import parse_date_field
 
 CHANNELS = ("Di persona", "Telefono", "Email", "WhatsApp", "Altro")
 MAX_SERVICES = 6
-CONTENT_FIELDS = ("standard_fee_cents", "proposed_fee_cents", "periodicity", "services", "conditions", "valid_until")
+# Contenuto copiato da «Crea nuova versione». `authorized_by` resta fuori: una nuova versione
+# richiede di nuovo chi autorizza la condizione riservata (OD-3c).
+CONTENT_FIELDS = ("standard_fee_cents", "proposed_fee_cents", "periodicity", "services", "conditions", "valid_until",
+                  "enrollment_fee_cents", "reductions")
+DRAFT_FIELDS = CONTENT_FIELDS + ("authorized_by",)
 _MAX_CENTS = 1_000_000_00
 
 
@@ -90,7 +94,11 @@ def clean_reductions(items: list[Mapping[str, Any]] | None, previous: list[Mappi
     for index, item in enumerate(items or [], start=1):
         reason = str(item.get("reason") or "").strip()
         amount = item.get("amount_cents")
-        note = clean(item.get("note"), 200) if item.get("note") is not None else None
+        try:
+            note = clean(item.get("note"), 200) if item.get("note") is not None else None
+        except ValidationError:
+            raise ValidationError(f"Riduzione {index}: nota troppo lunga (massimo 200 caratteri).",
+                                  f"reduction_note_{index}") from None
         if not reason and amount is None and not note:
             continue
         if not reason:
@@ -122,17 +130,37 @@ def needs_authorization(reductions: list[Mapping[str, Any]]) -> bool:
                or entry.needs_authorization for item in reductions)
 
 
-def parse_offer(form: Mapping[str, Any]) -> dict[str, Any]:
+def parse_offer(form: Mapping[str, Any], previous: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Valori della bozza: listino, condizione riservata, importo finale comunicato, servizi.
+
+    Tutti gli importi sono scritti da chi compila; nessuno sconto viene calcolato (SPEC §6, OD-3).
+    """
     periodicity = form.get("periodicity") or None
     if periodicity is not None and periodicity not in PERIODICITIES:
         raise ValidationError("Periodicità non valida.", "periodicity")
+    standard = parse_euro(form.get("standard_fee"), "standard_fee", "Retta di listino")
+    rows = [{"reason": form.get(f"reduction_reason_{index}") or "",
+             "amount_cents": parse_euro(form.get(f"reduction_amount_{index}"), f"reduction_amount_{index}",
+                                        f"Riduzione {index}"),
+             "note": form.get(f"reduction_note_{index}")}
+            for index in range(1, catalog.MAX_REDUCTIONS + 1)]
+    reductions = clean_reductions(rows, reductions_of(previous) if previous is not None else None)
+    if standard is not None and sum(item["amount_cents"] for item in reductions) > standard:
+        raise ValidationError("Le riduzioni superano la retta di listino.", "reduction_amount_1")
+    try:
+        authorized_by = clean(form.get("authorized_by"), 120)
+    except ValidationError:
+        raise ValidationError("«Autorizzata da»: massimo 120 caratteri.", "authorized_by") from None
     return {
-        "standard_fee_cents": parse_euro(form.get("standard_fee"), "standard_fee", "Retta standard"),
-        "proposed_fee_cents": parse_euro(form.get("proposed_fee"), "proposed_fee", "Quota proposta"),
+        "standard_fee_cents": standard,
+        "proposed_fee_cents": parse_euro(form.get("proposed_fee"), "proposed_fee", "Retta finale comunicata"),
         "periodicity": periodicity,
         "services": json.dumps(parse_services(form), ensure_ascii=False),
         "conditions": clean(form.get("conditions"), 4000),
         "valid_until": parse_date_field(form, "valid_until", "Validità"),
+        "enrollment_fee_cents": parse_euro(form.get("enrollment_fee"), "enrollment_fee", "Quota d'iscrizione"),
+        "reductions": json.dumps(reductions, ensure_ascii=False),
+        "authorized_by": authorized_by,
     }
 
 
@@ -150,6 +178,21 @@ def discount_cents(row: Mapping[str, Any]) -> int | None:
         return None
     difference = row["standard_fee_cents"] - row["proposed_fee_cents"]
     return difference if difference > 0 else None
+
+
+def consistency_warning(row: Mapping[str, Any]) -> str | None:
+    """Avviso, mai un blocco: listino meno riduzioni diverso dalla retta finale scritta."""
+    reductions = reductions_of(row)
+    if not reductions or row["standard_fee_cents"] is None or row["proposed_fee_cents"] is None:
+        return None
+    total = sum(int(item.get("amount_cents") or 0) for item in reductions)
+    expected = row["standard_fee_cents"] - total
+    if expected == row["proposed_fee_cents"]:
+        return None
+    from ..labels import euro
+
+    return (f"Listino {euro(row['standard_fee_cents'])} meno riduzioni {euro(total)} = {euro(expected)}, "
+            f"ma la retta finale indicata è {euro(row['proposed_fee_cents'])}: controlla prima di comunicarla.")
 
 
 def get_offer(db: Database, offer_id: str, family_id: str | None = None) -> sqlite3.Row:
@@ -170,6 +213,15 @@ class OfferScope:
     lead_id: str | None
     lead_name: str | None
     versions: list[sqlite3.Row] = field(default_factory=list)
+    lead_grade: str | None = None
+    lead_year: str | None = None
+
+    @property
+    def heading(self) -> str:
+        """«Per Luca · Primaria 1ª · 2027/2028» oppure «Proposta familiare»: anno e classe dell'ambito."""
+        if not self.lead_id:
+            return "Proposta familiare"
+        return "Per " + " · ".join(part for part in (self.lead_name, self.lead_grade, self.lead_year) if part)
 
     @property
     def draft(self) -> sqlite3.Row | None:
@@ -189,14 +241,16 @@ class OfferScope:
 
 def family_offer_scopes(db: Database, family_id: str) -> list[OfferScope]:
     rows = db.all(
-        "SELECT o.*, s.display_name AS lead_name, s.school_year AS lead_year FROM Offer o "
+        "SELECT o.*, s.display_name AS lead_name, s.school_year AS lead_year, s.grade AS lead_grade FROM Offer o "
         "LEFT JOIN StudentLead s ON s.id = o.student_lead_id WHERE o.family_id = ? "
         "ORDER BY o.student_lead_id IS NOT NULL, s.display_name, o.version_no",
         (family_id,),
     )
     scopes: dict[str | None, OfferScope] = {}
     for row in rows:
-        scope = scopes.setdefault(row["student_lead_id"], OfferScope(family_id, row["student_lead_id"], row["lead_name"]))
+        scope = scopes.setdefault(row["student_lead_id"], OfferScope(
+            family_id, row["student_lead_id"], row["lead_name"], lead_grade=row["lead_grade"],
+            lead_year=row["lead_year"]))
         scope.versions.append(row)
     return list(scopes.values())
 
@@ -205,10 +259,12 @@ def _insert(db: Database, offer_id: str, family_id: str, lead_id: str | None, ve
             values: Mapping[str, Any], now: datetime) -> None:
     db.execute(
         "INSERT INTO Offer (id, family_id, student_lead_id, version_no, previous_offer_id, standard_fee_cents, "
-        "proposed_fee_cents, periodicity, services, conditions, valid_until, status, created_at, updated_at, "
-        "created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOZZA', ?, ?, ?, ?)",
+        "proposed_fee_cents, periodicity, services, conditions, valid_until, enrollment_fee_cents, reductions, "
+        "authorized_by, status, created_at, updated_at, created_by, updated_by) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOZZA', ?, ?, ?, ?)",
         (offer_id, family_id, lead_id, version, previous, values["standard_fee_cents"], values["proposed_fee_cents"],
          values["periodicity"], values["services"], values["conditions"], values["valid_until"],
+         values.get("enrollment_fee_cents"), values.get("reductions") or "[]", values.get("authorized_by"),
          stamp(now), stamp(now), AUTHOR, AUTHOR),
     )
 
@@ -245,7 +301,7 @@ def create_new_version(db: Database, source_id: str, *, offer_id: str, now: date
         draft = next((row for row in rows if row["status"] == "BOZZA"), None)
         if draft is not None:
             raise DraftExists(draft["id"])
-        values = {name: source[name] for name in CONTENT_FIELDS}
+        values = {name: source[name] for name in CONTENT_FIELDS}  # senza «Autorizzata da» (OD-3c)
         _insert(db, offer_id, source["family_id"], source["student_lead_id"], rows[-1]["version_no"] + 1,
                 source_id, values, now)
     return offer_id
@@ -259,11 +315,11 @@ def update_draft(db: Database, offer_id: str, family_id: str, values: Mapping[st
             raise ValidationError("Proposta già comunicata: il contenuto è congelato. Crea una nuova versione.")
         if current["revision"] != revision:
             raise StaleWriteError()
-        assignments = ", ".join(f"{column} = ?" for column in CONTENT_FIELDS)
+        assignments = ", ".join(f"{column} = ?" for column in DRAFT_FIELDS)
         cursor = db.execute(
             f"UPDATE Offer SET {assignments}, updated_at = ?, updated_by = ?, revision = revision + 1 "
             "WHERE id = ? AND revision = ? AND status = 'BOZZA'",
-            [*(values[name] for name in CONTENT_FIELDS), stamp(now), AUTHOR, offer_id, revision],
+            [*(values[name] for name in DRAFT_FIELDS), stamp(now), AUTHOR, offer_id, revision],
         )
         if cursor.rowcount != 1:
             raise StaleWriteError()
@@ -273,7 +329,7 @@ def completeness_problems(row: Mapping[str, Any]) -> list[str]:
     """Cosa manca perché la proposta sia comprensibile prima di comunicarla (SPEC §6)."""
     problems = []
     if row["proposed_fee_cents"] is None:
-        problems.append("manca la quota proposta")
+        problems.append("manca la quota proposta (retta finale comunicata)")
     if row["periodicity"] is None:
         problems.append("manca la periodicità")
     for service in services_of(row):
@@ -281,6 +337,9 @@ def completeness_problems(row: Mapping[str, Any]) -> list[str]:
             problems.append("un servizio non ha descrizione")
         if service.get("amount_cents") is not None and not service.get("periodicity"):
             problems.append(f"il servizio «{service.get('description')}» non ha periodicità")
+    if needs_authorization(reductions_of(row)) and not row["authorized_by"]:
+        problems.append("manca «Autorizzata da» per la condizione riservata (promozione, accordo con la Direzione "
+                        "o altra condizione discrezionale)")
     return problems
 
 
@@ -356,13 +415,26 @@ def form_from_offer(row: Mapping[str, Any]) -> dict[str, Any]:
         "conditions": row["conditions"],
         "valid_until": row["valid_until"],
         "revision": row["revision"],
+        "enrollment_fee": euro_input(row["enrollment_fee_cents"]),
+        "authorized_by": row["authorized_by"],
     }
+    for index, item in enumerate(reductions_of(row), start=1):
+        form[f"reduction_reason_{index}"] = item.get("reason")
+        form[f"reduction_amount_{index}"] = euro_input(item.get("amount_cents"))
+        form[f"reduction_note_{index}"] = item.get("note")
     for index, service in enumerate(services_of(row), start=1):
         form[f"service_description_{index}"] = service.get("description")
         form[f"service_amount_{index}"] = euro_input(service.get("amount_cents"))
         form[f"service_periodicity_{index}"] = service.get("periodicity")
         form[f"service_included_{index}"] = "1" if service.get("included") else "0"
     return form
+
+
+def previous_authorization(db: Database, row: Mapping[str, Any]) -> str | None:
+    """«Autorizzata da» della versione precedente: solo un suggerimento, mai copiato (OD-3c)."""
+    if not row["previous_offer_id"]:
+        return None
+    return db.scalar("SELECT authorized_by FROM Offer WHERE id = ?", (row["previous_offer_id"],))
 
 
 def expired(row: Mapping[str, Any], today: date) -> bool:

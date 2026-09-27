@@ -286,6 +286,9 @@ def _register_hooks(app: Flask, state: AppState) -> None:
         offer_services=offer_service.services_of,
         offer_discount=offer_service.discount_cents,
         offer_channels=offer_service.CHANNELS,
+        offer_reductions=offer_service.reductions_of,
+        offer_warning=offer_service.consistency_warning,
+        offer_needs_authorization=offer_service.needs_authorization,
     )
 
     @app.errorhandler(HTTPException)

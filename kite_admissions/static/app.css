@@ -259,3 +259,15 @@ body.closed { padding-top: 4rem; }
 .badge-age-regolare { background: var(--ok-soft); color: var(--ok); }
 .badge-age-anticipo { background: var(--accent-soft); color: var(--accent); }
 .badge-age-da_verificare { background: var(--warn-soft); color: var(--warn); }
+
+/* v1.1 — proposta in blocchi: listino standard · condizione riservata · importo finale comunicato */
+.price-blocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; margin: 0.5rem 0; }
+@media (max-width: 760px) { .price-blocks { grid-template-columns: 1fr; } }
+.price-block { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.5rem 0.65rem; background: #fbfcfd; font-size: 0.9rem; }
+.price-block.reserved { border-color: #d9c9f2; background: #faf7ff; }
+.price-block.final { border-color: #9cc4ea; background: #f5f9fe; }
+.price-title { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 700; margin-bottom: 0.25rem; }
+fieldset.price-fieldset { border-left: 4px solid var(--line-strong); }
+fieldset.price-fieldset.reserved { border-left-color: #b9a3e3; background: #faf7ff; }
+fieldset.price-fieldset.final { border-left-color: #6fa8dc; background: #f5f9fe; }
+fieldset.price-fieldset .hint { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.35rem 0; }

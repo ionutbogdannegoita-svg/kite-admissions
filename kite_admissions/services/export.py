@@ -27,7 +27,7 @@ from ..timeutil import ROME, to_iso
 OPERATIONAL_TABLES = TABLES[:6]
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 _NAME_RE = re.compile(r"^kite-admissions-export-[0-9]{8}-[0-9]{6}(-[0-9]+)?\.zip$")
-_MONEY_COLUMNS = ("standard_fee_cents", "proposed_fee_cents")
+_MONEY_COLUMNS = ("standard_fee_cents", "proposed_fee_cents", "enrollment_fee_cents")
 
 
 def safe_cell(value: Any) -> str:
