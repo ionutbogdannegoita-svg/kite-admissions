@@ -130,7 +130,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Dev -NoShortcut
 .venv\Scripts\python.exe -m pytest
 ```
 
-La suite (170 test alla chiusura della V1, 298 con la v1.1) usa solo dati sintetici e cartelle temporanee e copre: schema e vincoli, sicurezza locale, avvio reale con Waitress a istanza singola, famiglie e richieste, import Calendar (sorgente simulata e adapter Google a livello HTTP), collegamento, cronologia, offerte, follow-up e Oggi, backup/ripristino/export/eliminazione e un flusso end-to-end completo. Per la v1.1 (`tests/test_v11_*.py`): migrazione da un database V1 e ripristino di backup V1, catalogo, dati dell'alunno ed età, economia in tre blocchi, pagina del colloquio con impronte, conflitti e doppio invio, regola del prossimo passo, riepilogo e storico, e un collaudo end-to-end.
+La suite (170 test alla chiusura della V1, 304 con la v1.1) usa solo dati sintetici e cartelle temporanee e copre: schema e vincoli, sicurezza locale, avvio reale con Waitress a istanza singola, famiglie e richieste, import Calendar (sorgente simulata e adapter Google a livello HTTP), collegamento, cronologia, offerte, follow-up e Oggi, backup/ripristino/export/eliminazione e un flusso end-to-end completo. Per la v1.1 (`tests/test_v11_*.py`): migrazione da un database V1 e ripristino di backup V1, catalogo, dati dell'alunno ed età, economia in tre blocchi, pagina del colloquio con impronte, conflitti e doppio invio, regola del prossimo passo, riepilogo e storico, e un collaudo end-to-end.
 
 ### Collaudo senza credenziali Google
 

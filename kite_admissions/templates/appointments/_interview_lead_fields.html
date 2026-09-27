@@ -51,12 +51,25 @@
           {% if current and current not in levels|map(attribute='code')|list %}<option value="{{ current }}" selected>{{ current|cat('LANGUAGE_LEVELS') }}</option>{% endif %}
         </select></div>
     {% endfor %}
+    {# Lingue salvate e poi tolte dal catalogo: restano visibili e si possono solo togliere. #}
+    {% set known = languages|map(attribute='code')|list %}
+    {% set start = (prefix ~ 'lang_')|length %}
+    {% for key in form.keys()|sort if key.startswith(prefix ~ 'lang_') and key[start:] not in known and form.get(key) %}
+      <div class="field"><label for="{{ key }}">{{ key[start:] }} (voce non più in elenco)</label>
+        <select id="{{ key }}" name="{{ key }}">
+          <option value="">— (togli)</option>
+          {% for level in levels %}<option value="{{ level.code }}" {{ 'selected' if form.get(key) == level.code }}>{{ level.label }}</option>{% endfor %}
+          {% if form.get(key) not in levels|map(attribute='code')|list %}<option value="{{ form.get(key) }}" selected>{{ form.get(key)|cat('LANGUAGE_LEVELS') }}</option>{% endif %}
+        </select></div>
+    {% endfor %}
     {% for index in other_rows %}
       <div class="field"><label for="{{ prefix }}other_lang_{{ index }}_name">Altra lingua {{ index }}</label>
         <input type="text" id="{{ prefix }}other_lang_{{ index }}_name" name="{{ prefix }}other_lang_{{ index }}_name" value="{{ form.get(prefix ~ 'other_lang_' ~ index ~ '_name') or '' }}" maxlength="40">
         <select name="{{ prefix }}other_lang_{{ index }}_level" aria-label="Livello altra lingua {{ index }}">
           <option value="">—</option>
           {% for level in levels %}<option value="{{ level.code }}" {{ 'selected' if form.get(prefix ~ 'other_lang_' ~ index ~ '_level') == level.code }}>{{ level.label }}</option>{% endfor %}
+          {% set current = form.get(prefix ~ 'other_lang_' ~ index ~ '_level') %}
+          {% if current and current not in levels|map(attribute='code')|list %}<option value="{{ current }}" selected>{{ current|cat('LANGUAGE_LEVELS') }}</option>{% endif %}
         </select></div>
     {% endfor %}
     <div class="field"><label for="{{ prefix }}bilingual_context">Contesti bilingui o internazionali già frequentati</label>

@@ -28,7 +28,7 @@ Fonti: [SPEC.md](SPEC.md) (V1, con l'addendum v1.1 al §14), [specifica operativ
 
 ## Test
 
-- `.venv\Scripts\python.exe -m pytest` nel worktree: **298 test verdi** (i 170 della V1, con gli aggiornamenti dichiarati nella Issue, e 128 nuovi della v1.1 in `tests/test_v11_*.py`), su dati sintetici e cartelle temporanee.
+- `.venv\Scripts\python.exe -m pytest` nel worktree: **304 test verdi** (i 170 della V1, con gli aggiornamenti dichiarati nella Issue, e 134 nuovi della v1.1 in `tests/test_v11_*.py`), su dati sintetici e cartelle temporanee.
 - Test V1 aggiornati, come previsto dalla specifica (§10): `test_foundations.py` (versione dello schema e migrazioni su una versione successiva finta), `test_e2e.py` (fonte «Evento / open day»), `test_linking.py`, `test_timeline.py` e `tests/dataset.py` (prossimo passo per le visite svolte di appuntamenti collegati, OD-5).
 
 ## Collaudo v1.1 (2026-09-27)
@@ -39,6 +39,18 @@ Su server Waitress reale, cartelle dati di prova nello scratchpad, calendario di
 - **Compatibilità con la V1 autentica** (codice `7452456` estratto con `git archive` e avviato su una cartella di prova): dati e backup creati dalla 1.0.0; la v1.1 avviata su quei dati crea la copia «pre-migrazione» (schema 1), migra allo schema 2 con valori V1 identici, integrità e foreign key OK, 7 tabelle; il backup V1 si ripristina nella v1.1, viene migrato, segnala famiglie mancanti e riapparse, e il colloquio funziona sui dati ripristinati (23/23 controlli, dopo la correzione di un'attesa errata dello script).
 - `app.js`: sintassi verificata con Node e comportamento provato su un DOM simulato (scelte rapide, data di «Attendere risposta» secondo la tempistica, «non prosegue», protezione dall'uscita). Struttura HTML bilanciata sulle pagine principali.
 - **Un difetto trovato nel collaudo e corretto**: un incontro futuro soltanto preparato veniva considerato «colloquio più recente» e toglieva i dati attuali dell'alunno dal riepilogo della visita già svolta. Ora conta l'ultimo colloquio avvenuto; test di regressione aggiunto.
+
+## Revisione indipendente v1.1 (2026-09-27)
+
+Revisione in sola lettura, a contesto pulito, del diff `main...v1.1-interview-workflow` contro la specifica operativa e l'addendum (con prove su database temporanei sintetici). Esito: **nessun difetto critico, 2 major e 3 minor, tutti corretti** con un test di regressione ciascuno (i test falliscono sul codice precedente e passano sul nuovo):
+
+1. *Major* — un follow-up spuntato «completato con questo incontro» valeva ancora come prossimo passo, aggirando OD-5. Ora i follow-up completati nella stessa conclusione non contano; l'elenco si chiama «Follow-up già aperti».
+2. *Major* — aprendo il colloquio prima dell'inizio dell'incontro, un «Salva» successivo fissava nella bozza una data effettiva vuota e la chiusura in 3 azioni falliva. Ora una data vuota vale «usa la proposta dell'evento» e la bozza si salva solo se diversa dalla proposta.
+3. *Minor* — un esito «non presentata/annullata» registrato per errore non poteva tornare «non ancora registrato». Ora c'è una spunta esplicita, valida con «Salva» (mai verso «svolta»).
+4. *Minor* — una lingua o un livello tolti dal catalogo rompevano i salvataggi o sparivano. Ora restano come «voce non più in elenco» e si possono solo togliere.
+5. *Minor* — dopo «Cambia collegamento» con una bozza K, l'impronta del colloquio si rompeva una volta. Ora la richiesta non più della famiglia non si ripresenta.
+
+Confermati dalla revisione: protocollo multi-record (ogni campo mostrato è letto e viceversa), regola OD-5, offerte (§8.7), migrazione e ripristino, riepilogo e storico, privacy, Allowed Surface, rendering dei rami rari dei template.
 
 ## Limitazioni note
 

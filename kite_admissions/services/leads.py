@@ -44,10 +44,12 @@ def clean_languages(items: list[Mapping[str, Any]] | None, previous: list[Mappin
                     ) -> list[dict[str, str]]:
     """Lingue dichiarate dalla famiglia (non valutazioni): IT, EN, FR e fino a due altre lingue.
 
-    Ogni voce ha un livello del catalogo; i livelli già salvati e poi tolti dal catalogo restano ammessi.
+    Ogni voce ha un livello del catalogo. Lingue e livelli già salvati e poi tolti dal catalogo restano
+    ammessi (IW13): si conservano e si possono solo togliere.
     """
-    legacy_levels = {item.get("level") for item in previous or [] if isinstance(item, Mapping)}
-    main = catalog.codes(catalog.LANGUAGES)
+    stored = [item for item in previous or [] if isinstance(item, Mapping)]
+    legacy_levels = {item.get("level") for item in stored}
+    main = catalog.codes(catalog.LANGUAGES) + tuple(legacy_language_codes(stored))
     by_code: dict[str, dict[str, str]] = {}
     others: list[dict[str, str]] = []
     for item in items or []:
@@ -72,6 +74,17 @@ def clean_languages(items: list[Mapping[str, Any]] | None, previous: list[Mappin
     if len(others) > catalog.MAX_OTHER_LANGUAGES:
         raise ValidationError(f"Al massimo {catalog.MAX_OTHER_LANGUAGES} altre lingue.", "languages")
     return [by_code[code] for code in main if code in by_code] + others
+
+
+def legacy_language_codes(items: list[Mapping[str, Any]]) -> list[str]:
+    """Codici di lingua salvati ma non più nel catalogo (esclusa «altra lingua»), nell'ordine salvato."""
+    main = catalog.codes(catalog.LANGUAGES)
+    result: list[str] = []
+    for item in items:
+        code = str(item.get("code") or "")
+        if code and code not in main and code != catalog.OTHER_LANGUAGE and code not in result:
+            result.append(code)
+    return result
 
 
 def languages_of(row: Mapping[str, Any]) -> list[dict[str, str]]:
@@ -156,12 +169,14 @@ def age_info(lead: Mapping[str, Any], today: date) -> AgeInfo | None:
 
 
 def _parse_languages(form: Mapping[str, Any], prefix: str, previous: Mapping[str, Any] | None) -> str:
-    items: list[dict[str, Any]] = [{"code": code, "level": form.get(f"{prefix}lang_{code}") or ""}
-                                   for code in catalog.codes(catalog.LANGUAGES)]
+    stored = languages_of(previous) if previous is not None else []
+    # Anche le lingue salvate e poi tolte dal catalogo: il modulo le mostra, qui si rileggono (IW13).
+    codes = list(catalog.codes(catalog.LANGUAGES)) + legacy_language_codes(stored)
+    items: list[dict[str, Any]] = [{"code": code, "level": form.get(f"{prefix}lang_{code}") or ""} for code in codes]
     for index in range(1, catalog.MAX_OTHER_LANGUAGES + 1):
         items.append({"code": catalog.OTHER_LANGUAGE, "name": form.get(f"{prefix}other_lang_{index}_name"),
                       "level": form.get(f"{prefix}other_lang_{index}_level") or ""})
-    cleaned = clean_languages(items, languages_of(previous) if previous is not None else None)
+    cleaned = clean_languages(items, stored if previous is not None else None)
     return json.dumps(cleaned, ensure_ascii=False)
 
 

@@ -425,7 +425,7 @@ def test_followup_created_before_the_visit_does_not_count(client, db, luca, cloc
     clock.set(datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc))
     assert conclude(client, appointment).status_code == 422
     html, fields = open_page(client, appointment, "k")
-    assert "Follow-up aperti da prima dell&#39;incontro" in html or "Follow-up aperti da prima dell'incontro" in html
+    assert "Follow-up già aperti (non nati da questo incontro)" in html
     response = submit(client, appointment, fields, "conclude", {f"complete_{old}": "1"}, outcome="SVOLTA",
                       step1_action="RICHIAMARE", step1_due_on="2026-10-04")
     assert response.status_code == 302
@@ -645,3 +645,106 @@ def test_saving_and_concluding_are_fast_on_the_synthetic_dataset(app, client, fa
         started = time.perf_counter()
         response = submit(client, appointment, fields, action, **changes)
         assert response.status_code == 302 and time.perf_counter() - started < 2
+
+
+# --- Regressioni dalla revisione indipendente -----------------------------------------------
+
+def test_a_step_completed_in_the_same_conclusion_is_not_coverage(client, db, luca, clock):
+    """Un follow-up creato dopo la visita e spuntato «completato con questo incontro» non vale come passo."""
+    family, appointment = luca["family"], luca["appointment"]
+    later = str(uuid.uuid4())
+    client.post(f"/famiglie/{family}/follow-up/nuovo", data={"new_id": later, "action": "INVIARE_INFORMAZIONI",
+                                                            "due_on": "2026-10-02", "note": "brochure (esempio)"})
+    html, fields = open_page(client, appointment, "k")
+    assert "ha già un passo successivo" in html  # da solo copre la richiesta
+    response = submit(client, appointment, fields, "conclude", {f"complete_{later}": "1"}, outcome="SVOLTA")
+    assert response.status_code == 422 and "prossimo passo successivo" in response.get_data(as_text=True)
+    assert row(db, "FollowUp", later)["status"] == "APERTO"
+    response = submit(client, appointment, fields, "conclude", {f"complete_{later}": "1"}, outcome="SVOLTA",
+                      step1_action="RICHIAMARE", step1_due_on="2026-10-06")
+    assert response.status_code == 302 and row(db, "FollowUp", later)["status"] == "COMPLETATO"
+    assert db.scalar("SELECT count(*) FROM FollowUp WHERE status = 'APERTO' AND appointment_id = ?", (appointment,)) == 1
+
+
+def test_page_opened_before_the_meeting_still_proposes_the_event_time(app, client, fake, db, clock):
+    """Una bozza salvata prima dell'inizio non «congela» la data vuota: la chiusura in 3 azioni resta possibile."""
+    family_id = create_family(client, display_name="Famiglia Esempio Orario")
+    lead_id = create_lead(client, family_id)
+    appointment = meeting(app, client, fake, family_id, lead_id, start="2026-10-01T10:30:00+02:00")
+    clock.set(datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc))  # 10:00 a Roma: l'incontro non è iniziato
+    _, early = open_page(client, appointment, "prepara")
+    assert early["visited_at"] == ""
+    clock.set(datetime(2026, 10, 1, 8, 45, tzinfo=timezone.utc))  # 10:45: «Salva» della sola sezione C
+    assert submit(client, appointment, early, "save:c", motivations=["LINGUE"]).status_code == 302
+    assert "closing_draft" not in stored(db, appointment)  # K non toccata: nessuna bozza
+    _, fields = open_page(client, appointment, "k")
+    assert fields["visited_at"] == "2026-10-01T10:30"
+    response = submit(client, appointment, fields, "conclude", outcome="SVOLTA", step1_action="RICHIAMARE",
+                      step1_due_on="2026-10-04")
+    assert response.status_code == 302 and row(db, "Appointment", appointment)["visited_at"] == "2026-10-01T08:30:00.000000Z"
+
+
+def test_a_draft_without_date_uses_the_event_time_once_the_meeting_started(app, client, fake, db, clock):
+    family_id = create_family(client, display_name="Famiglia Esempio Bozza")
+    appointment = meeting(app, client, fake, family_id, create_lead(client, family_id),
+                          start="2026-10-01T10:30:00+02:00")
+    clock.set(datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc))
+    _, early = open_page(client, appointment, "k")
+    submit(client, appointment, early, "save:k", step1_note="richiamare dopo le 17")  # bozza con data vuota
+    assert stored(db, appointment)["closing_draft"]["visited_at"] is None
+    clock.set(datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc))
+    _, fields = open_page(client, appointment, "k")
+    assert fields["visited_at"] == "2026-10-01T10:30" and fields["step1_note"] == "richiamare dopo le 17"
+
+
+def test_an_outcome_registered_by_mistake_can_be_reset(client, db, luca, clock):
+    appointment = luca["appointment"]
+    assert conclude(client, appointment, outcome="NON_PRESENTATA", visited_at="").status_code == 302
+    assert "Resoconti da completare" in client.get("/").get_data(as_text=True)
+    html, fields = open_page(client, appointment, "k")
+    assert 'name="reset_outcome"' in html and fields["outcome"] == "NON_PRESENTATA"
+    assert submit(client, appointment, fields, "save:k").status_code == 302  # senza la spunta non cambia nulla
+    assert row(db, "Appointment", appointment)["visit_outcome"] == "NON_PRESENTATA"
+    response = submit(client, appointment, fields, "save:k", reset_outcome="1", outcome="SVOLTA")
+    assert response.status_code == 302
+    assert row(db, "Appointment", appointment)["visit_outcome"] is None  # mai «svolta» con «Salva»
+    html, fields = open_page(client, appointment, "k")
+    assert 'name="reset_outcome"' not in html and fields.get("outcome", "") == ""
+    missing = client.get("/").get_data(as_text=True).split("Resoconti da completare")[1].split("</section>")[0]
+    assert "Visita Esempio Colloquio" in missing
+
+
+def test_languages_removed_from_the_catalog_are_kept(client, db, luca, monkeypatch):
+    """IW13: una lingua o un livello tolti dal catalogo non rompono i salvataggi e non si perdono."""
+    lead, appointment = luca["lead"], luca["appointment"]
+    db.execute("UPDATE StudentLead SET languages = ? WHERE id = ?", (json.dumps([
+        {"code": "IT", "level": "MADRELINGUA"}, {"code": "DE", "level": "BASE"},
+        {"code": "ALTRA", "name": "Lingua Esempio", "level": "LIVELLO_VECCHIO"}]), lead))
+    html, fields = open_page(client, appointment, "e")
+    assert "DE (voce non più in elenco)" in html and "LIVELLO_VECCHIO (voce non più in elenco)" in html
+    assert fields["s1_lang_DE"] == "BASE" and fields["s1_other_lang_1_level"] == "LIVELLO_VECCHIO"
+    before = revision(db, "StudentLead", lead)
+    assert submit(client, appointment, fields, "save:c", motivations=["LINGUE"]).status_code == 302
+    assert revision(db, "StudentLead", lead) == before  # alunno non toccato: non riscritto, nessun errore
+    assert submit(client, appointment, fields, "save:a", s1_current_school="Scuola Esempio").status_code == 302
+    saved = json.loads(row(db, "StudentLead", lead)["languages"])
+    assert {"code": "DE", "level": "BASE"} in saved and saved[-1]["level"] == "LIVELLO_VECCHIO"
+    _, fields = open_page(client, appointment, "e")
+    assert submit(client, appointment, fields, "save:e", s1_lang_DE="").status_code == 302
+    assert "DE" not in [item["code"] for item in json.loads(row(db, "StudentLead", lead)["languages"])]
+    page = client.get(f"/famiglie/{luca['family']}/richieste/{lead}/modifica").get_data(as_text=True)
+    assert "LIVELLO_VECCHIO (voce non più in elenco)" in page
+
+
+def test_change_link_with_a_saved_draft_keeps_a_clean_fingerprint(client, db, luca):
+    appointment = luca["appointment"]
+    _, fields = open_page(client, appointment, "k")
+    submit(client, appointment, fields, "save:k", step1_action="RICHIAMARE", step1_lead=luca["lead"])
+    other = create_family(client, display_name="Nucleo Esempio Altro")
+    client.post(f"/appuntamenti/{appointment}/cambia", data={"family_id": other,
+                                                            "revision": revision(db, "Appointment", appointment)})
+    _, fields = open_page(client, appointment, "k")
+    assert fields["a_fp"] and fields["step1_lead"] == ""
+    before = revision(db, "Appointment", appointment)
+    assert submit(client, appointment, fields, "save:k").status_code == 302
+    assert revision(db, "Appointment", appointment) == before  # intatto: nessuna riscrittura

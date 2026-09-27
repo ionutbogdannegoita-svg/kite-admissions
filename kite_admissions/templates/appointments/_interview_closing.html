@@ -5,7 +5,10 @@
   {% if page.phase == 'open' %}
     {{ guide(["Allora ci sentiamo… / vi mandiamo… entro…: va bene?"]) }}
     <p class="small">Si concorda con la famiglia prima che vada via. Tutto ciò che è qui diventa operativo solo con <strong>«Concludi colloquio»</strong>; «Salva» ne conserva la bozza.</p>
-    {% if a.visit_outcome %}<div class="flash flash-info small">Esito già registrato: {{ a.visit_outcome|label }}{% if a.visited_at %} il {{ a.visited_at|dt }}{% endif %}. Per cambiarlo scegli l'esito e premi «Concludi colloquio».</div>{% endif %}
+    {% if a.visit_outcome %}
+      <div class="flash flash-info small">Esito già registrato: {{ a.visit_outcome|label }}{% if a.visited_at %} il {{ a.visited_at|dt }}{% endif %}. Per cambiarlo scegli l'esito e premi «Concludi colloquio».
+        <label class="check"><input type="checkbox" name="reset_outcome" value="1" {{ 'checked' if form.get('reset_outcome') == '1' }}> <span>Registrato per errore: con «Salva» l'incontro torna «non ancora registrato» (e fra i resoconti da completare)</span></label></div>
+    {% endif %}
     <fieldset>
       <legend>Esito dell'incontro</legend>
       <div class="chips">
@@ -73,7 +76,8 @@
 
     {% if page.open_followups %}
       <fieldset>
-        <legend>Follow-up aperti da prima dell'incontro</legend>
+        <legend>Follow-up già aperti (non nati da questo incontro)</legend>
+        <p class="hint">Un follow-up segnato qui come completato non vale più come prossimo passo.</p>
         {% for f in page.open_followups %}
           <label class="check"><input type="checkbox" name="complete_{{ f.id }}" value="1" {{ 'checked' if form.get('complete_' ~ f.id) == '1' }}>
             <span>{{ step_label(f) }}{% if f.lead_name %} · {{ f.lead_name }}{% endif %} · {% if f.due_on < today_iso %}scaduto il {{ f.due_on|d }}{% else %}entro il {{ f.due_on|d }}{% endif %}{% if f.note and not f.note.startswith(wait_note) %} · {{ f.note }}{% endif %} — <em>completato con questo incontro</em></span></label>
@@ -97,7 +101,7 @@
     {% if page.coverage %}
       <div class="flash flash-warning small">Copertura: nessun passo successivo all'incontro per {{ page.coverage|join(', ') }} → per concludere come «Visita svolta» serve il prossimo passo (oppure «Non prosegue»).</div>
     {% else %}
-      <div class="flash flash-info small">Copertura: ogni richiesta dell'incontro ha già un passo successivo all'incontro, oppure è chiusa o in pausa.</div>
+      <div class="flash flash-info small">Copertura: ogni richiesta dell'incontro ha già un passo successivo all'incontro, oppure è chiusa o in pausa (un follow-up completato qui sopra non conta).</div>
     {% endif %}
 
     <div class="field wide"><label for="visit_report">Sintesi libera (facoltativa)</label>

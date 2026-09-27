@@ -279,10 +279,11 @@ def meeting_followups(db: Database, appointment_id: str) -> list[sqlite3.Row]:
 
 @dataclass
 class RenderInfo:
-    """Cosa la pagina mostra oltre ai valori: caselle di completamento e di chiusura."""
+    """Cosa la pagina mostra oltre ai valori: caselle di completamento e di chiusura, richieste selezionabili."""
 
     followup_ids: list[str]
     closable_lead_ids: list[str]
+    family_lead_ids: list[str] = field(default_factory=list)
 
 
 def render_info(db: Database, ctx: Context, lead_ids: list[str] | None = None) -> RenderInfo:
@@ -292,7 +293,7 @@ def render_info(db: Database, ctx: Context, lead_ids: list[str] | None = None) -
     else:
         rendered = [lead for lead in (ctx.lead(lead_id) for lead_id in lead_ids) if lead is not None]
     closable = [lead["id"] for lead in rendered if lead["status"] in lead_service.OPEN_STATUSES]
-    return RenderInfo([row["id"] for row in followups], closable)
+    return RenderInfo([row["id"] for row in followups], closable, [lead["id"] for lead in ctx.leads])
 
 
 # --- Valori del modulo ----------------------------------------------------------------------
@@ -337,7 +338,8 @@ def _closing_form(closing: Mapping[str, Any], info: RenderInfo, fallback_lead: s
         form[f"step{slot}_action"] = step.get("action") or ""
         form[f"step{slot}_due_on"] = step.get("due_on") or ""
         form[f"step{slot}_assignee"] = step.get("assignee") or ""
-        form[f"step{slot}_lead"] = step.get("lead") or ""
+        # Una richiesta che non è (più) della famiglia, per esempio dopo «Cambia collegamento», non si ripresenta.
+        form[f"step{slot}_lead"] = step.get("lead") if step.get("lead") in info.family_lead_ids else ""
         form[f"step{slot}_note"] = step.get("note") or ""
     if closing.get("verify"):
         form["verify_step"] = "1"
@@ -388,7 +390,11 @@ def meeting_form(ctx: Context, info: RenderInfo) -> dict[str, Any]:
             form[f"verify_{index}"] = "1"
     if ctx.phase == "open":
         draft = interview.get("closing_draft")
-        closing = {**default_closing(ctx), **draft} if isinstance(draft, dict) else default_closing(ctx)
+        default = default_closing(ctx)
+        closing = {**default, **draft} if isinstance(draft, dict) else default
+        if not closing.get("visited_at"):
+            # Una bozza salvata prima dell'inizio dell'incontro non «congela» la data vuota: vale la proposta.
+            closing = {**closing, "visited_at": default["visited_at"]}
         form.update(_closing_form(closing, info, appointment["student_lead_id"]))
     else:
         form["visit_outcome"] = appointment["visit_outcome"] or ""
@@ -531,6 +537,8 @@ def parse_meeting(form: Any, ctx: Context) -> dict[str, Any]:
     if phase == "open":
         draft = stored.get("closing_draft") if isinstance(stored.get("closing_draft"), dict) else {}
         values["closing"] = parse_closing(form, lead_ids, draft)
+        # Correzione di un esito «non presentata/annullata» registrato per errore: torna «non ancora registrato».
+        values["reset_outcome"] = form.get("reset_outcome") == "1"
     else:
         outcome = form.get("visit_outcome") or None
         if outcome is not None and outcome not in OUTCOMES:
@@ -823,6 +831,14 @@ def _closing_default_normalized(ctx: Context, info: RenderInfo) -> dict[str, Any
     return parse_closing(form, {row["id"] for row in ctx.leads})
 
 
+def _same_as_default(closing: Mapping[str, Any], default: Mapping[str, Any]) -> bool:
+    """La bozza di K coincide con la proposta: una data effettiva vuota vale «usa la proposta»."""
+    candidate = dict(closing)
+    if not candidate.get("visited_at"):
+        candidate["visited_at"] = default.get("visited_at")
+    return candidate == dict(default)
+
+
 def _write_meeting(db: Database, ctx: Context, values: Mapping[str, Any], *, revision: int, now: datetime,
                    conclusion: Mapping[str, Any] | None = None) -> None:
     appointment = ctx.appointment
@@ -844,9 +860,14 @@ def _write_meeting(db: Database, ctx: Context, values: Mapping[str, Any], *, rev
         columns["visited_at"] = conclusion["visited_at"]
     elif values["phase"] == "open":
         if appointment["visit_outcome"] != "SVOLTA":
-            info = render_info(db, ctx)
-            if values["closing"] != _closing_default_normalized(ctx, info):
-                interview["closing_draft"] = values["closing"]
+            closing = dict(values["closing"])
+            default = _closing_default_normalized(ctx, render_info(db, ctx))
+            if values.get("reset_outcome") and appointment["visit_outcome"] in ("NON_PRESENTATA", "ANNULLATA"):
+                # Correzione esplicita: l'esito registrato per errore torna «non ancora registrato» (mai «svolta»).
+                columns["visit_outcome"] = None
+                closing["outcome"] = default["outcome"] = None
+            if not _same_as_default(closing, default):
+                interview["closing_draft"] = closing
     else:
         if values["outcome"] == "SVOLTA" and appointment["visit_outcome"] != "SVOLTA":
             raise ValidationError("Il passaggio a «Visita svolta» si registra con «Concludi colloquio».", "visit_outcome")
@@ -962,20 +983,23 @@ def _offer_action(db: Database, family_id: str, action: Action, form: Any, now: 
 
 def closure_coverage(db: Database, family_id: str, appointment_id: str, scope_lead_id: str | None, *,
                      visited_at: str | None, new_step_leads: Iterable[str | None],
-                     closing: set[str] | frozenset[str] = frozenset()) -> list[str]:
+                     closing: set[str] | frozenset[str] = frozenset(),
+                     completing: Iterable[str] = ()) -> list[str]:
     """Richieste aperte dell'ambito senza un prossimo passo *successivo* alla visita (§8.8).
 
     Contano: i passi creati in questa conclusione (quelli di famiglia coprono tutte le richieste),
-    i follow-up aperti creati dopo l'inizio della visita, un altro appuntamento della famiglia non
-    annullato, verificato, senza esito e successivo; oppure la richiesta chiusa ora, già chiusa o in
-    pausa con riesame. Non contano l'incontro stesso, gli appuntamenti con esito e i follow-up nati
-    prima della visita. Restituisce i nomi scoperti ([] = si può chiudere).
+    i follow-up aperti creati dopo l'inizio della visita e non completati in questa stessa conclusione
+    (`completing`), un altro appuntamento della famiglia non annullato, verificato, senza esito e
+    successivo; oppure la richiesta chiusa ora, già chiusa o in pausa con riesame. Non contano
+    l'incontro stesso, gli appuntamenti con esito e i follow-up nati prima della visita. Restituisce i
+    nomi scoperti ([] = si può chiudere).
     """
     moment = visited_at or "0000"
+    completed_now = set(completing)
     steps: list[str | None] = list(new_step_leads)
-    steps += [row[0] for row in db.all(
-        "SELECT student_lead_id FROM FollowUp WHERE family_id = ? AND status = 'APERTO' AND created_at >= ?",
-        (family_id, moment))]
+    steps += [row["student_lead_id"] for row in db.all(
+        "SELECT id, student_lead_id FROM FollowUp WHERE family_id = ? AND status = 'APERTO' AND created_at >= ?",
+        (family_id, moment)) if row["id"] not in completed_now]
     steps += [row[0] for row in db.all(
         f"SELECT a.student_lead_id FROM Appointment a WHERE a.family_id = ? AND a.id <> ? "
         f"AND a.src_status <> 'CANCELLED_SOURCE' AND a.verification_state = 'VERIFIED' AND a.visit_outcome IS NULL "
@@ -1083,7 +1107,7 @@ def _conclude(db: Database, ctx: Context, values: Mapping[str, Any], submission:
     if outcome == "SVOLTA" and appointment["visit_outcome"] != "SVOLTA":
         uncovered = closure_coverage(db, family_id, appointment["id"], values["student_lead_id"],
                                      visited_at=visited_at, new_step_leads=[step["student_lead_id"] for step in steps],
-                                     closing=closing_leads)
+                                     closing=closing_leads, completing=closing["complete"])
         if uncovered:
             raise ValidationError(coverage_message(uncovered), "step1_action")
 
