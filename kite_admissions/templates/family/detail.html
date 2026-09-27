@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, lead_badge %}
+{% from "_appt.html" import when, status_badges %}
+{% block title %}{{ family.display_name }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ family.display_name }}
+        {% if family.archived_at %}<span class="badge badge-archived">Archiviata il {{ family.archived_at|d }}</span>{% endif %}
+      </h1>
+      <div class="sub">
+        {{ [family.primary_adult_name,
+            ('fonte: ' ~ family.contact_source) if family.contact_source,
+            ('primo contatto ' ~ family.first_contact_on|d) if family.first_contact_on]|select|join(' · ') }}
+      </div>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="{{ url_for('families.edit', family_id=family.id) }}">Modifica dati</a>
+      {% if family.archived_at %}
+        <form method="post" action="{{ url_for('families.unarchive', family_id=family.id) }}">{{ csrf() }}
+          <button type="submit" class="btn btn-secondary">Riporta tra le attive</button></form>
+      {% else %}
+        <form method="post" action="{{ url_for('families.archive', family_id=family.id) }}">{{ csrf() }}
+          <button type="submit" class="btn btn-quiet">Archivia</button></form>
+      {% endif %}
+      <a class="btn btn-quiet" href="{{ url_for('families.delete', family_id=family.id) }}">Elimina definitivamente…</a>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div>
+      {% block family_main %}
+      <section class="card" id="richieste">
+        <div class="card-head">
+          <h2>Richieste dei figli <span class="count {{ 'zero' if not leads }}">{{ leads|length }}</span></h2>
+        </div>
+        {% if leads %}
+          <table class="list">
+            <thead><tr><th>Alunno</th><th>Anno · classe</th><th>Stato</th><th></th></tr></thead>
+            <tbody>
+              {% for lead in leads %}
+                <tr>
+                  <td>
+                    <strong>{{ lead.display_name }}</strong>
+                    {% if lead.origin %}<div class="item-meta">Provenienza: {{ lead.origin }}</div>{% endif %}
+                    {% if lead.birth_year %}<div class="item-meta">Nato/a nel {{ lead.birth_year }}</div>{% endif %}
+                    {% if lead.notes %}<div class="item-meta pre">{{ lead.notes }}</div>{% endif %}
+                  </td>
+                  <td>{{ lead.school_year or 'anno non indicato' }}{% if lead.grade %}<div class="item-meta">{{ lead.grade }}</div>{% endif %}</td>
+                  <td>
+                    {{ lead_badge(lead.status) }}
+                    {% if lead.status == 'IN_PAUSA' %}<div class="item-meta">riesame {{ lead.review_on|d }}</div>{% endif %}
+                    {% if lead.status == 'ISCRITTO' %}<div class="item-meta">dal {{ lead.closed_on|d }} · rif. {{ lead.enrollment_ref }}</div>{% endif %}
+                    {% if lead.status == 'NON_PROSEGUE' %}<div class="item-meta">dal {{ lead.closed_on|d }}{% if lead.closure_reason %} · {{ lead.closure_reason }}{% endif %}</div>{% endif %}
+                  </td>
+                  <td class="actions-cell">
+                    <a class="btn btn-small btn-secondary" href="{{ url_for('families.lead_status', family_id=family.id, lead_id=lead.id) }}">Cambia stato</a>
+                    <a class="btn btn-small btn-quiet" href="{{ url_for('families.edit_lead', family_id=family.id, lead_id=lead.id) }}">Modifica</a>
+                    <a class="btn btn-small btn-quiet" href="{{ url_for('families.create_lead', family_id=family.id, da=lead.id) }}" title="Nuova richiesta per un altro anno con i dati essenziali">Altro anno</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">Nessun alunno ancora identificato.</p>
+        {% endif %}
+        <details class="panel">
+          <summary>Aggiungi una richiesta</summary>
+          <div class="panel-body">
+            <form method="post" action="{{ url_for('families.create_lead', family_id=family.id) }}">
+              {{ csrf() }}<input type="hidden" name="new_id" value="{{ new_lead_id }}">
+              <div class="form-grid">
+                <div class="field"><label for="nl_name" class="required">Nome o riferimento provvisorio</label>
+                  <input type="text" id="nl_name" name="display_name" required maxlength="200"></div>
+                <div class="field"><label for="nl_year">Anno scolastico</label>
+                  <select id="nl_year" name="school_year"><option value="">Non indicato</option>
+                    {% for year in years %}<option value="{{ year }}">{{ year }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="nl_grade">Classe o ciclo</label>
+                  <input type="text" id="nl_grade" name="grade" list="grades" maxlength="80">
+                  <datalist id="grades">{% for grade in grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
+                <div class="field"><label for="nl_origin">Provenienza o zona</label>
+                  <input type="text" id="nl_origin" name="origin" maxlength="200"></div>
+              </div>
+              <div class="form-actions"><button type="submit" class="btn">Aggiungi richiesta</button></div>
+            </form>
+          </div>
+        </details>
+      </section>
+      {% endblock %}
+
+      {% include "family/_followups.html" %}
+
+      <section class="card" id="appuntamenti">
+        <div class="card-head">
+          <h2>Appuntamenti e visite <span class="count {{ 'zero' if not appointments }}">{{ appointments|length }}</span></h2>
+        </div>
+        {% if appointments %}
+          <table class="list">
+            <thead><tr><th>Quando</th><th>Evento</th><th>Resoconto</th></tr></thead>
+            <tbody>
+              {% for a in appointments %}
+                <tr class="{{ 'muted-row' if a.src_status == 'CANCELLED_SOURCE' }}">
+                  <td class="nowrap">{{ when(a) }}</td>
+                  <td><a href="{{ url_for('appointments.detail', appointment_id=a.id) }}">{{ a.src_title or '(senza titolo)' }}</a>
+                    <div>{{ status_badges(a) }}{% if a.lead_name %} <span class="item-meta">· {{ a.lead_name }}</span>{% endif %}</div></td>
+                  <td>
+                    {% if a.visit_outcome %}
+                      <span class="badge badge-{{ a.visit_outcome|lower }}">{{ a.visit_outcome|label }}</span>
+                      {% if a.visit_report %}<div class="item-meta pre">{{ a.visit_report|truncate(220) }}</div>{% endif %}
+                    {% elif a.id in needs_report %}
+                      <a class="badge badge-warn" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#resoconto">Resoconto da completare</a>
+                    {% else %}<span class="muted">—</span>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">Nessun appuntamento collegato. Gli appuntamenti si creano in Google Calendar e si collegano da «Appuntamenti».</p>
+        {% endif %}
+      </section>
+
+      {% include "family/_offers.html" %}
+
+      <section class="card" id="cronologia">
+        <div class="card-head"><h2>Cronologia</h2></div>
+        <details class="panel" id="note">
+          <summary>Aggiungi nota o comunicazione</summary>
+          <div class="panel-body">
+            <form method="post" action="{{ url_for('families.create_note', family_id=family.id) }}">
+              {{ csrf() }}<input type="hidden" name="new_id" value="{{ new_note_id }}">
+              <div class="form-grid">
+                <div class="field"><label for="note_type">Tipo</label>
+                  <select id="note_type" name="type">{% for value in note_types %}<option value="{{ value }}">{{ value|label }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="note_when">Quando</label>
+                  <input type="datetime-local" id="note_when" name="occurred_at" value="{{ now_local }}"></div>
+                <div class="field"><label for="note_lead">Riguarda</label>
+                  <select id="note_lead" name="student_lead_id"><option value="">Tutta la famiglia</option>
+                    {% for lead in leads %}<option value="{{ lead.id }}">{{ lead.display_name }} · {{ lead.school_year or '' }}</option>{% endfor %}</select></div>
+                <div class="field wide"><label for="note_text" class="required">Testo</label>
+                  <textarea id="note_text" name="text" required maxlength="4000"></textarea></div>
+              </div>
+              <div class="form-actions"><button type="submit" class="btn">Aggiungi alla cronologia</button></div>
+            </form>
+          </div>
+        </details>
+        {% if timeline %}
+          <ul class="timeline">
+            {% for item in timeline %}
+              <li>
+                <span class="tl-when">{{ item.at|d if item.date_only else item.at|dt }}</span>
+                <span>
+                  <span class="tl-kind">{% if item.link %}<a href="{{ item.link }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</span>
+                  {% if item.detail %}<div class="item-meta pre">{{ item.detail }}</div>{% endif %}
+                  <div class="item-meta">{{ item.kind }}{% if item.author %} · {{ item.author }}{% endif %}
+                    {% if item.editable %} · <a href="{{ url_for('families.edit_note', family_id=family.id, note_id=item.item_id) }}">modifica</a>{% endif %}</div>
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">Ancora nessun evento in cronologia.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside>
+      <section class="card {{ 'alert' if next_step.missing }}">
+        <h2>Prossimo passo</h2>
+        {% if next_step.closed %}
+          <p class="muted">Tutte le richieste sono chiuse.</p>
+        {% elif next_step.missing %}
+          <div class="flash flash-error">Senza prossimo passo{% if next_step.uncovered_leads %}: {{ next_step.uncovered_leads|join(', ') }}{% endif %}.</div>
+          <p class="small">Aggiungi un follow-up o fai fissare una visita in Google Calendar.</p>
+        {% endif %}
+        {% if next_step.label %}<p><strong>{{ next_step.label }}</strong>{% if next_step.overdue %} <span class="badge badge-scaduto">Scaduto</span>{% endif %}</p>{% endif %}
+      </section>
+      <section class="card">
+        <h2>Recapiti</h2>
+        {% if not has_contact %}<div class="flash flash-warning">Nessun recapito registrato.</div>{% endif %}
+        <dl class="facts">
+          {% if family.primary_adult_name or family.primary_phone or family.primary_email %}
+            <dt>Adulto</dt><dd>{{ family.primary_adult_name or '—' }}</dd>
+            {% if family.primary_phone %}<dt>Telefono</dt><dd>{{ family.primary_phone }}</dd>{% endif %}
+            {% if family.primary_email %}<dt>Email</dt><dd>{{ family.primary_email }}</dd>{% endif %}
+          {% endif %}
+          {% if family.secondary_adult_name or family.secondary_phone or family.secondary_email %}
+            <dt>Secondo adulto</dt><dd>{{ family.secondary_adult_name or '—' }}</dd>
+            {% if family.secondary_phone %}<dt>Telefono</dt><dd>{{ family.secondary_phone }}</dd>{% endif %}
+            {% if family.secondary_email %}<dt>Email</dt><dd>{{ family.secondary_email }}</dd>{% endif %}
+          {% endif %}
+        </dl>
+        {% if family.preliminary_notes %}
+          <h3>Note preliminari</h3>
+          <p class="pre">{{ family.preliminary_notes }}</p>
+        {% endif %}
+        <p class="item-meta">Creata {{ family.created_at|dt }} · aggiornata {{ family.updated_at|dt }} ({{ family.updated_by }})</p>
+      </section>
+      {% block family_side %}{% endblock %}
+    </aside>
+  </div>
+{% endblock %}

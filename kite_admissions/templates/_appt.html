@@ -1,0 +1,37 @@
+{# Macro per gli appuntamenti: data/ora in Europe/Rome, giorni interi senza orari inventati. #}
+
+{% macro when(a, weekday=true) -%}
+  {%- if a.src_start_at -%}
+    {{ a.src_start_at|dt if weekday else a.src_start_at|dt_short }}–{{ a.src_end_at|t }}
+  {%- elif a.src_start_date -%}
+    {{ a.src_start_date|dw if weekday else a.src_start_date|d }} · giorno intero <span class="badge badge-warn">Orario da verificare</span>
+  {%- else -%}
+    <span class="badge badge-danger">Orario non disponibile</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro event_when(e) -%}
+  {%- if e.start_at -%}
+    {{ e.start_at|dt }}–{{ e.end_at|t }}
+  {%- elif e.start_date -%}
+    {{ e.start_date|dw }} · giorno intero <span class="badge badge-warn">Orario da verificare</span>
+  {%- else -%}
+    <span class="badge badge-danger">Orario non disponibile</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro status_badges(a) -%}
+  {% if a.src_status == 'CANCELLED_SOURCE' %}<span class="badge badge-cancelled_source">Annullato su Calendar</span>
+  {% elif a.src_status == 'TENTATIVE' %}<span class="badge badge-tentative">Da confermare</span>{% endif %}
+  {% if a.verification_state == 'NOT_VERIFIED' %}<span class="badge badge-not_verified" title="{{ a.verification_error }}">Non verificato</span>{% endif %}
+  {% if a.src_recurring_event_id %}<span class="badge">Ricorrente</span>{% endif %}
+  {% if a.family_archived_at %}<span class="badge badge-archived">Famiglia archiviata</span>{% endif %}
+{%- endmacro %}
+
+{% macro link_state(a) -%}
+  {% if a.family_id %}
+    <a href="{{ url_for('families.detail', family_id=a.family_id) }}">{{ a.family_name }}</a>{% if a.lead_name %} · {{ a.lead_name }}{% endif %}
+  {% elif a.src_status != 'CANCELLED_SOURCE' %}
+    <span class="badge badge-warn">Da collegare</span>
+  {% else %}<span class="muted">—</span>{% endif %}
+{%- endmacro %}

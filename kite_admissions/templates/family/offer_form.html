@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% block title %}{{ 'Bozza v' ~ offer.version_no if offer else 'Nuova proposta' }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{% if offer %}Bozza della proposta v{{ offer.version_no }}{% else %}Nuova proposta economica{% endif %}</h1>
+      <div class="sub"><a href="{{ url_for('families.detail', family_id=family.id) }}#offerte">{{ family.display_name }}</a>
+        {% if offer %} · {{ 'per ' ~ scope_lead.display_name if scope_lead else 'per la famiglia' }}{% endif %} · importi in EUR</div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+  <form method="post" class="card">
+    {{ csrf() }}
+    {% if offer %}<input type="hidden" name="revision" value="{{ form.revision }}">
+    {% else %}<input type="hidden" name="new_id" value="{{ form.new_id }}">{% endif %}
+
+    {% if not offer %}
+      <div class="field">
+        <label for="student_lead_id">Ambito della proposta</label>
+        <select id="student_lead_id" name="student_lead_id">
+          <option value="">Proposta familiare (senza un alunno specifico)</option>
+          {% for lead in leads %}<option value="{{ lead.id }}" {{ 'selected' if form.student_lead_id == lead.id }}>Per {{ lead.display_name }} · {{ lead.school_year or 'anno non indicato' }}</option>{% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    <div class="form-grid spaced">
+      <div class="field"><label for="standard_fee">Retta standard di riferimento</label>
+        <input type="text" id="standard_fee" name="standard_fee" value="{{ form.standard_fee or '' }}" inputmode="decimal" placeholder="es. 5.400,00"></div>
+      <div class="field"><label for="proposed_fee" class="required">Quota proposta</label>
+        <input type="text" id="proposed_fee" name="proposed_fee" value="{{ form.proposed_fee or '' }}" inputmode="decimal" placeholder="es. 4.900,00"></div>
+      <div class="field"><span class="label required">Periodicità (vale per retta e quota)</span>
+        {% for value in periodicities %}
+          <label class="check"><input type="radio" name="periodicity" value="{{ value }}" {{ 'checked' if form.periodicity == value }}> {{ value|label }}</label>
+        {% endfor %}</div>
+      <div class="field"><label for="valid_until">Valida fino al</label>
+        <input type="date" id="valid_until" name="valid_until" value="{{ form.valid_until or '' }}"></div>
+    </div>
+    <p class="item-meta">Se retta e quota hanno la stessa base, lo sconto è la differenza. Condizioni diverse vanno scritte nelle note, senza percentuali ambigue. Gli importi con periodicità diverse non vengono sommati.</p>
+
+    <fieldset class="spaced">
+      <legend>Servizi inclusi o aggiuntivi</legend>
+      <table class="list compact">
+        <thead><tr><th>Descrizione</th><th>Importo</th><th>Periodicità</th><th>Tipo</th></tr></thead>
+        <tbody>
+          {% for index in service_rows %}
+            <tr>
+              <td><input type="text" name="service_description_{{ index }}" value="{{ form['service_description_' ~ index] or '' }}" maxlength="300" aria-label="Servizio {{ index }}"></td>
+              <td><input type="text" name="service_amount_{{ index }}" value="{{ form['service_amount_' ~ index] or '' }}" inputmode="decimal" aria-label="Importo servizio {{ index }}"></td>
+              <td><select name="service_periodicity_{{ index }}" aria-label="Periodicità servizio {{ index }}"><option value="">—</option>
+                {% for value in periodicities %}<option value="{{ value }}" {{ 'selected' if form['service_periodicity_' ~ index] == value }}>{{ value|label }}</option>{% endfor %}</select></td>
+              <td><select name="service_included_{{ index }}" aria-label="Tipo servizio {{ index }}">
+                <option value="1" {{ 'selected' if form['service_included_' ~ index] != '0' }}>Incluso</option>
+                <option value="0" {{ 'selected' if form['service_included_' ~ index] == '0' }}>Aggiuntivo</option></select></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </fieldset>
+
+    <div class="field wide"><label for="conditions">Note e condizioni</label>
+      <textarea id="conditions" name="conditions" maxlength="4000">{{ form.conditions or '' }}</textarea></div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Salva bozza</button>
+      <a href="{{ url_for('families.detail', family_id=family.id) }}#offerte">Annulla</a>
+    </div>
+    <p class="item-meta">Salvare non comunica nulla: nessuna email o messaggio viene inviato.</p>
+  </form>
+{% endblock %}

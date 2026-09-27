@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, next_here %}
+{% block title %}Dati e collegamento Google{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Dati e collegamento Google</h1>
+      <div class="sub">{{ school_name }} · un solo utilizzatore su questo PC</div>
+    </div>
+  </div>
+
+  <div class="grid-halves">
+    <section class="card" id="google">
+      <h2>Google Calendar (sola lettura)</h2>
+      {% if simulated %}
+        <div class="flash flash-warning">Sorgente in uso: <strong>{{ simulated_label }}</strong>. Nessun collegamento a Google.</div>
+      {% else %}
+        <ol class="steps">
+          <li>
+            <strong>Client OAuth «App desktop»</strong>
+            {% if google_client %}
+              <span class="badge badge-ok">Configurato</span>
+              <div class="item-meta">Client {{ google_client.client_id }}{% if google_client.project_id %} · progetto {{ google_client.project_id }}{% endif %}</div>
+            {% else %}
+              <span class="badge badge-warn">Da configurare</span>
+              <div class="item-meta">Crea in Google Cloud un client OAuth di tipo «App desktop» e caricane qui il file JSON (vedi README).</div>
+            {% endif %}
+            <form method="post" action="{{ url_for('panel.google_client') }}" enctype="multipart/form-data" class="actions">
+              {{ csrf() }}
+              <input type="file" name="client_file" accept=".json,application/json" required>
+              <button type="submit" class="btn btn-secondary btn-small">{{ 'Sostituisci' if google_client else 'Carica' }}</button>
+            </form>
+          </li>
+          <li>
+            <strong>Autorizzazione in lettura</strong>
+            {% if google_connected %}
+              <span class="badge badge-ok">Collegato</span>
+              <form method="post" action="{{ url_for('panel.google_disconnect') }}" class="actions">{{ csrf() }}
+                <button type="submit" class="btn btn-quiet btn-small">Scollega e revoca</button></form>
+            {% else %}
+              <span class="badge badge-warn">Non collegato</span>
+              <div class="item-meta">Si apre il browser per il consenso Google (permessi: lettura eventi e lettura elenco calendari).</div>
+              {% if google_client %}
+                <form method="post" action="{{ url_for('panel.google_connect') }}" class="actions">{{ csrf() }}
+                  <button type="submit" class="btn btn-small">Collega Google</button></form>
+              {% endif %}
+            {% endif %}
+          </li>
+        </ol>
+      {% endif %}
+      <h3>Calendario sorgente</h3>
+      {% if settings.calendar %}
+        <p><strong>{{ settings.calendar.summary }}</strong> <span class="item-meta">{{ settings.calendar.id }}</span></p>
+      {% else %}
+        <p class="muted">Nessun calendario scelto.</p>
+      {% endif %}
+      {% if simulated or google_connected %}
+        <a class="btn btn-secondary btn-small" href="{{ url_for('panel.google_calendars') }}">{{ 'Cambia calendario' if settings.calendar else 'Scegli il calendario' }}</a>
+      {% endif %}
+      <h3>Finestra predefinita dell'import</h3>
+      <form method="post" action="{{ url_for('panel.google_window') }}" class="actions">{{ csrf() }}
+        <label class="small">Giorni precedenti <input type="number" name="past_days" min="0" max="365" value="{{ window.past_days }}"></label>
+        <label class="small">Giorni successivi <input type="number" name="future_days" min="1" max="730" value="{{ window.future_days }}"></label>
+        <button type="submit" class="btn btn-secondary btn-small">Salva</button>
+      </form>
+      <h3>Ultimo aggiornamento</h3>
+      {% include "_calendar_status.html" %}
+      {% if exclusions %}
+        <p class="item-meta">Eventi esclusi dall'import: {{ exclusions.get('IGNORED', 0) }} ignorati, {{ exclusions.get('FAMILY_DELETED', 0) }} di famiglie eliminate.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Dati locali</h2>
+      {% if location_warning %}<div class="flash flash-warning">{{ location_warning }}</div>{% endif %}
+      <dl class="facts">
+        <dt>Database</dt><dd><code>{{ paths.db_path }}</code></dd>
+        <dt>Configurazione</dt><dd><code>{{ paths.settings_path }}</code></dd>
+        <dt>Backup</dt><dd><code>{{ paths.backups_dir }}</code></dd>
+        <dt>Export</dt><dd><code>{{ paths.exports_dir }}</code></dd>
+        <dt>Versione schema</dt><dd>{{ schema_version }}</dd>
+      </dl>
+      <div class="actions">
+        <form method="post" action="{{ url_for('panel.open_folder') }}">
+          {{ csrf() }}{{ next_here() }}<input type="hidden" name="folder" value="dati">
+          <button type="submit" class="btn btn-secondary">Apri cartella dati</button>
+        </form>
+      </div>
+      <table class="list compact">
+        <thead><tr><th>Tabella</th><th class="num">Righe</th></tr></thead>
+        <tbody>
+          {% for table, count in counts.items() %}
+            <tr><td>{{ table }}</td><td class="num">{{ count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="item-meta">Il database non è cifrato da SQLite: la protezione dipende dall'account Windows e dalla cifratura del disco. Blocca la sessione quando il PC è incustodito.</p>
+    </section>
+  </div>
+
+  <div class="grid-halves">
+    <section class="card" id="backup">
+      <div class="card-head">
+        <h2>Backup</h2>
+        <form method="post" action="{{ url_for('panel.backup_now') }}">{{ csrf() }}
+          <button type="submit" class="btn">Crea backup ora</button></form>
+      </div>
+      {% set last = settings.last_backup %}
+      {% if last and last.at %}<p class="small">Ultima copia riuscita: <strong>{{ last.at|dt }}</strong> <span class="item-meta">({{ last.name }})</span></p>
+      {% else %}<p class="small muted">Nessuna copia ancora creata.</p>{% endif %}
+      {% if last and last.error %}<div class="flash flash-error">Ultimo backup non riuscito ({{ last.error_at|dt }}): {{ last.error }}</div>{% endif %}
+      <p class="item-meta">Copia giornaliera automatica dopo ogni salvataggio e a fine import; copia separata prima di eliminazioni, aggiornamenti dello schema e ripristini. Automatiche e pre-operazione si conservano {{ retention_days }} giorni (l'ultima copia valida resta sempre); le manuali restano finché non le elimini tu. Per proteggerti dalla perdita del PC copia periodicamente un backup su un supporto esterno cifrato.</p>
+      <table class="list compact">
+        <thead><tr><th>Creato</th><th>Tipo</th><th class="num">Famiglie</th><th></th></tr></thead>
+        <tbody>
+          {% for item in backup_list[:12] %}
+            <tr>
+              <td class="nowrap">{% if item.error %}<span class="badge badge-danger">illeggibile</span> {{ item.name }}{% else %}{{ item.created_at|dt_short }}{% endif %}</td>
+              <td>{{ item.kind }}{% if item.operation %} · {{ item.operation }}{% endif %}</td>
+              <td class="num">{{ item.counts.get('Family', '') }}</td>
+              <td class="actions-cell">
+                {% if not item.error %}
+                  <a class="btn btn-small btn-quiet" href="{{ url_for('panel.backup_download', kind=item.kind, name=item.name) }}">Scarica</a>
+                  <a class="btn btn-small btn-secondary" href="{{ url_for('panel.restore_confirm', kind=item.kind, name=item.name) }}">Ripristina…</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="empty">Nessun backup presente.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <form method="post" action="{{ url_for('panel.open_folder') }}" class="actions">
+        {{ csrf() }}{{ next_here() }}<input type="hidden" name="folder" value="backup">
+        <button type="submit" class="btn btn-quiet btn-small">Apri cartella backup</button>
+      </form>
+      <p class="item-meta">Per ripristinare un backup copiato altrove, mettilo nella cartella <code>backups\manuali</code> e ricarica la pagina.</p>
+    </section>
+
+    <section class="card" id="export">
+      <div class="card-head">
+        <h2>Esporta dati</h2>
+        <form method="post" action="{{ url_for('panel.export_run') }}">{{ csrf() }}
+          <button type="submit" class="btn btn-secondary">Esporta dati</button></form>
+      </div>
+      <p class="small">Pacchetto locale con i CSV delle sei tabelle operative e un JSON completo (ID, relazioni, versioni delle offerte, esclusioni Calendar, configurazione non segreta). Nessun invio o caricamento; credenziali Google escluse. Serve a consultare o riutilizzare i dati: per ripristinare l'app usa un backup.</p>
+      <ul class="item-list">
+        {% for path in export_list %}
+          <li><span>{{ path.name }}</span><a class="btn btn-small btn-quiet" href="{{ url_for('panel.export_download', name=path.name) }}">Scarica</a></li>
+        {% else %}
+          <li class="empty">Nessun export creato.</li>
+        {% endfor %}
+      </ul>
+      <form method="post" action="{{ url_for('panel.open_folder') }}" class="actions">
+        {{ csrf() }}{{ next_here() }}<input type="hidden" name="folder" value="export">
+        <button type="submit" class="btn btn-quiet btn-small">Apri cartella export</button>
+      </form>
+    </section>
+  </div>
+{% endblock %}

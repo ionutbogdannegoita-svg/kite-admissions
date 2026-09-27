@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% from "_appt.html" import when %}
+{% block title %}Crea famiglia dall'evento{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Crea famiglia dall'evento</h1>
+      <div class="sub"><a href="{{ url_for('appointments.detail', appointment_id=a.id) }}">{{ a.src_title or '(senza titolo)' }}</a> · {{ when(a) }}</div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+
+  <div class="grid-2">
+    <form method="post" class="card">
+      {{ csrf() }}
+      <input type="hidden" name="new_id" value="{{ form.new_id }}">
+      <input type="hidden" name="revision" value="{{ form.revision }}">
+
+      {% if duplicates %}
+        <div class="flash flash-warning" role="alert">
+          <strong>Possibili doppioni.</strong> Se è una di queste famiglie, torna all'evento e usa «Collega».
+          <ul>{% for match in duplicates %}<li><a href="{{ url_for('families.detail', family_id=match.family_id) }}" target="_blank" rel="noopener">{{ match.display_name }}</a> — {{ match.reasons|join(', ') }}</li>{% endfor %}</ul>
+          <label class="check"><input type="checkbox" name="confirm_distinct" value="1"> Confermo che è un nucleo distinto</label>
+        </div>
+      {% endif %}
+
+      <p class="small muted">I campi sono suggerimenti presi dall'evento: controllali e correggili. Nessun dato assente viene inventato; il recapito può restare vuoto.</p>
+      <div class="form-grid">
+        <div class="field"><label for="display_name" class="required">Etichetta famiglia</label>
+          <input type="text" id="display_name" name="display_name" value="{{ form.display_name or '' }}" required maxlength="200" autofocus>
+          <span class="hint">Suggerita dal titolo dell'evento.</span></div>
+        <div class="field"><label for="primary_adult_name">Adulto di riferimento</label>
+          <input type="text" id="primary_adult_name" name="primary_adult_name" value="{{ form.primary_adult_name or '' }}" maxlength="200"></div>
+        <div class="field"><label for="primary_phone">Telefono</label>
+          <input type="tel" id="primary_phone" name="primary_phone" value="{{ form.primary_phone or '' }}" maxlength="60"></div>
+        <div class="field"><label for="primary_email">Email</label>
+          <input type="email" id="primary_email" name="primary_email" value="{{ form.primary_email or '' }}" maxlength="200"></div>
+        <div class="field"><label for="contact_source">Fonte del contatto</label>
+          <input type="text" id="contact_source" name="contact_source" value="{{ form.contact_source or '' }}" list="sources" maxlength="120">
+          <datalist id="sources">{% for source in sources %}<option value="{{ source }}">{% endfor %}</datalist></div>
+      </div>
+      <fieldset class="spaced">
+        <legend>Bambino (facoltativo, completabile prima della visita)</legend>
+        <div class="form-grid">
+          <div class="field"><label for="lead_display_name">Nome o riferimento provvisorio</label>
+            <input type="text" id="lead_display_name" name="lead_display_name" value="{{ form.lead_display_name or '' }}" maxlength="200"></div>
+          <div class="field"><label for="lead_school_year">Anno scolastico</label>
+            <select id="lead_school_year" name="lead_school_year"><option value="">Non indicato</option>
+              {% for year in years %}<option value="{{ year }}" {{ 'selected' if form.lead_school_year == year }}>{{ year }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="lead_grade">Classe o ciclo</label>
+            <input type="text" id="lead_grade" name="lead_grade" value="{{ form.lead_grade or '' }}" list="grades" maxlength="80">
+            <datalist id="grades">{% for grade in grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
+        </div>
+      </fieldset>
+      <div class="form-actions">
+        <button type="submit" class="btn">Crea e collega</button>
+        <a href="{{ url_for('appointments.detail', appointment_id=a.id) }}">Annulla</a>
+      </div>
+    </form>
+
+    <aside class="source-box">
+      <h2>Dall'evento</h2>
+      <p><strong>{{ a.src_title or '(senza titolo)' }}</strong></p>
+      <h3>Recapiti trovati</h3>
+      {% if contacts %}
+        <ul class="contacts-list">{% for c in contacts %}<li>{{ c.value }} <span class="item-meta">({{ 'telefono' if c.type == 'phone' else 'email' }} · da {{ c.source }}{% if c.label %} · {{ c.label }}{% endif %})</span></li>{% endfor %}</ul>
+      {% else %}<p class="muted">Nessun recapito nell'evento: «recapito non disponibile» è ammesso.</p>{% endif %}
+    </aside>
+  </div>
+{% endblock %}

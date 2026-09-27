@@ -1,0 +1,25 @@
+{% if kite.recovery %}
+  <div class="banner banner-danger" role="alert">
+    <strong>Database non utilizzabile.</strong> {{ kite.recovery.detail }}
+    <a href="{{ url_for('panel.recovery') }}">Vai al ripristino</a>
+  </div>
+{% endif %}
+{% set post_restore = kite.settings.load().get('post_restore') %}
+{% if post_restore and not kite.recovery %}
+  <div class="banner banner-warning" role="alert">
+    <strong>Ripristino eseguito dal backup del {{ post_restore.backup_created_at|dt }}.</strong>
+    Verifica dati mancanti e cancellazioni successive prima di riprendere import e modifiche.
+    <a href="{{ url_for('panel.restore_review') }}">Vai alla verifica</a>
+  </div>
+{% endif %}
+{% set last_backup = kite.settings.load().get('last_backup') %}
+{% if last_backup and last_backup.error and not kite.recovery %}
+  <div class="banner banner-danger" role="alert">
+    Ultimo backup automatico non riuscito: {{ last_backup.error }} I dati sono salvati. <a href="{{ url_for('panel.index') }}#backup">Dettagli</a>
+  </div>
+{% endif %}
+{% if kite.calendar_is_simulated %}
+  <div class="banner banner-warning" role="status">
+    Sorgente Calendar di prova: <strong>{{ kite.calendar_override.label }}</strong>. Nessun collegamento a Google.
+  </div>
+{% endif %}

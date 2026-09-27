@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% block title %}Modifica annotazione{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Modifica annotazione</h1>
+      <div class="sub"><a href="{{ url_for('families.detail', family_id=family.id) }}#cronologia">{{ family.display_name }}</a> · creata {{ note.created_at|dt }}</div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+  <form method="post" class="card">
+    {{ csrf() }}<input type="hidden" name="revision" value="{{ note.revision }}">
+    <div class="form-grid">
+      <div class="field"><label for="type">Tipo</label>
+        <select id="type" name="type">{% for value in note_types %}<option value="{{ value }}" {{ 'selected' if form.type == value }}>{{ value|label }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="occurred_at">Quando</label>
+        <input type="datetime-local" id="occurred_at" name="occurred_at" value="{{ form.occurred_at or '' }}"></div>
+      <div class="field"><label for="student_lead_id">Riguarda</label>
+        <select id="student_lead_id" name="student_lead_id"><option value="">Tutta la famiglia</option>
+          {% for lead in leads %}<option value="{{ lead.id }}" {{ 'selected' if form.student_lead_id == lead.id }}>{{ lead.display_name }}</option>{% endfor %}</select></div>
+      <div class="field wide"><label for="text" class="required">Testo</label>
+        <textarea id="text" name="text" required maxlength="4000">{{ form.text or '' }}</textarea></div>
+    </div>
+    {% if form.offer_id %}<input type="hidden" name="offer_id" value="{{ form.offer_id }}">{% endif %}
+    <div class="form-actions">
+      <button type="submit" class="btn">Salva</button>
+      <a href="{{ url_for('families.detail', family_id=family.id) }}#cronologia">Annulla</a>
+    </div>
+  </form>
+  <section class="card danger-zone">
+    <h2>Elimina annotazione</h2>
+    <p class="small">Per le correzioni puoi anche aggiungere una nuova annotazione di tipo «Rettifica». Le transizioni registrate automaticamente non si eliminano.</p>
+    <form method="post" action="{{ url_for('families.delete_note', family_id=family.id, note_id=note.id) }}" class="actions">
+      {{ csrf() }}
+      <label class="check"><input type="checkbox" name="confirm" value="1" required> Confermo l'eliminazione</label>
+      <button type="submit" class="btn btn-danger btn-small">Elimina</button>
+    </form>
+  </section>
+{% endblock %}

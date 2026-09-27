@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% block title %}Elimina definitivamente{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Elimina definitivamente: {{ family.display_name }}</h1>
+      <div class="sub">L'azione normale e reversibile è <strong>Archivia</strong>. Questa invece cancella il dossier locale.</div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+  <section class="card danger-zone">
+    <h2>Cosa verrà eliminato da questo PC</h2>
+    <table class="list compact">
+      <tbody>
+        {% for label, count in counts.items() %}<tr><td>{{ label|capitalize }}</td><td class="num">{{ count }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    <ul class="small">
+      <li>Prima dell'eliminazione viene creata e verificata una copia di sicurezza: se non riesce, non si elimina nulla.</li>
+      <li>Gli eventi Google collegati non verranno più importati né riproposti.</li>
+      <li><strong>Google Calendar non viene modificato</strong>: gli eventi restano nel calendario.</li>
+      <li>Backup precedenti ed export già creati possono ancora contenere questo dossier.</li>
+    </ul>
+    <form method="post" class="spaced">
+      {{ csrf() }}
+      <div class="field">
+        <label for="confirm_label" class="required">Per confermare digita l'etichetta: <code>{{ family.display_name }}</code></label>
+        <input type="text" id="confirm_label" name="confirm_label" required autocomplete="off">
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-danger">Elimina definitivamente</button>
+        <a href="{{ url_for('families.detail', family_id=family.id) }}">Annulla</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

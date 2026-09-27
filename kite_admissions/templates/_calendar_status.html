@@ -1,0 +1,16 @@
+{# Stato dell'ultimo aggiornamento Calendar: tentativo, controllo completo ed errori (SPEC §4.2). #}
+{% set last = kite.settings.load().get('last_import') %}
+<div class="small">
+  {% if last and last.status == 'RESTORED' %}
+    Dati ripristinati da un backup: dopo la verifica premi «Aggiorna da Google Calendar» per ricontrollare gli appuntamenti.
+  {% elif last %}
+    Ultimo tentativo {{ last.attempted_at|dt }}
+    {% if last.status == 'OK' %}<span class="badge badge-ok">Completato</span>
+    {% elif last.status == 'PARTIAL' %}<span class="badge badge-warn">Parziale</span>
+    {% else %}<span class="badge badge-danger">Non riuscito</span>{% endif %}
+    · ultimo controllo completo {{ last.full_check_at|dt if last.full_check_at else 'mai' }}
+    {% if last.problem %}<div class="flash flash-warning spaced">{{ last.problem }}</div>{% endif %}
+  {% else %}
+    Nessun aggiornamento da Google Calendar eseguito finora.
+  {% endif %}
+</div>

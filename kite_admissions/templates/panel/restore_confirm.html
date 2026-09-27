@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Ripristina backup{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Ripristina un backup</h1>
+      <div class="sub">{{ name }}</div>
+    </div>
+  </div>
+  <div class="grid-halves">
+    <section class="card {{ 'danger-zone' if problem }}">
+      <h2>Backup scelto</h2>
+      {% if problem %}
+        <div class="flash flash-error">Il backup non supera la verifica e non verrà usato: {{ problem }}</div>
+      {% else %}
+        <div class="flash flash-ok">Verificato: apribile, integro, senza violazioni di foreign key, schema compatibile, contenuto uguale al manifest.</div>
+      {% endif %}
+      <dl class="facts">
+        <dt>Creato</dt><dd>{{ manifest.created_at|dt if manifest.created_at else '—' }}</dd>
+        <dt>Tipo</dt><dd>{{ manifest.kind }}{% if manifest.operation %} · prima di {{ manifest.operation }}{% endif %}</dd>
+        <dt>Versione schema</dt><dd>{{ manifest.schema_version }}</dd>
+        <dt>Versione app</dt><dd>{{ manifest.app_version }}</dd>
+      </dl>
+      {% if manifest.tables %}
+        <table class="list compact">
+          <thead><tr><th>Tabella</th><th class="num">Righe</th></tr></thead>
+          <tbody>{% for table, info in manifest.tables.items() %}<tr><td>{{ table }}</td><td class="num">{{ info.count }}</td></tr>{% endfor %}</tbody>
+        </table>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Database attuale</h2>
+      {% if inspection.status in ['ok', 'needs_migration'] %}
+        <p>Presente e integro: prima del ripristino ne verrà creata e verificata una copia di sicurezza. Se la copia non riesce, il database attuale non viene sostituito.</p>
+      {% elif inspection.status == 'missing' %}
+        <p>Assente: il ripristino procede senza copia preventiva.</p>
+      {% else %}
+        <p>Danneggiato o non leggibile ({{ inspection.detail or inspection.status }}): il file verrà conservato a parte quando possibile; non serve che sia integro.</p>
+      {% endif %}
+      <div class="flash flash-warning">Il ripristino torna allo stato del backup: possono riapparire dati eliminati dopo quella data e mancare quelli più recenti. Dopo il ripristino ti verrà chiesto di verificarli prima di riprendere import e modifiche.</div>
+      {% if not problem %}
+        <form method="post" action="{{ url_for('panel.restore_run', kind=kind, name=name) }}">
+          {{ csrf() }}
+          <div class="field"><label for="confirm_text" class="required">Per confermare digita RIPRISTINA</label>
+            <input type="text" id="confirm_text" name="confirm_text" required autocomplete="off"></div>
+          <div class="form-actions"><button type="submit" class="btn btn-danger">Ripristina questo backup</button>
+            <a href="{{ url_for('panel.index') }}#backup">Annulla</a></div>
+        </form>
+      {% endif %}
+    </section>
+  </div>
+{% endblock %}

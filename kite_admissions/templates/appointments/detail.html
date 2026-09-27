@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% from "_appt.html" import when, status_badges %}
+{% block title %}{{ a.src_title or 'Appuntamento' }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ a.src_title or '(senza titolo)' }}</h1>
+      <div class="sub">{{ when(a) }} {{ status_badges(a) }}</div>
+    </div>
+    <div class="actions">
+      {% if a.src_html_link %}
+        <a class="btn btn-secondary" href="{{ a.src_html_link }}" target="_blank" rel="noopener noreferrer">Apri in Google Calendar</a>
+      {% endif %}
+      <a class="btn btn-quiet" href="{{ url_for('appointments.index') }}">Torna agli appuntamenti</a>
+    </div>
+  </div>
+
+  <div class="grid-halves">
+    <section class="source-box">
+      <h2>Dati da Google Calendar</h2>
+      {% if a.src_status == 'CANCELLED_SOURCE' %}
+        <div class="flash flash-error">Annullato su Google Calendar. Collegamenti, resoconto e offerte restano conservati.</div>
+      {% endif %}
+      {% if a.verification_state == 'NOT_VERIFIED' %}
+        <div class="flash flash-warning">Non verificato: {{ a.verification_error }} Controlla l'evento in Google Calendar. I dati sotto sono l'ultima copia valida.</div>
+      {% endif %}
+      <dl class="facts">
+        <dt>Quando</dt><dd>{{ when(a) }}{% if a.src_time_zone %} <span class="item-meta">({{ a.src_time_zone }})</span>{% endif %}</dd>
+        {% if a.src_start_date and a.src_end_date %}<dt>Giorni</dt><dd>dal {{ a.src_start_date|d }}, fine esclusiva {{ a.src_end_date|d }}</dd>{% endif %}
+        {% if a.src_location %}<dt>Luogo</dt><dd>{{ a.src_location }}</dd>{% endif %}
+        {% if a.src_recurring_event_id %}<dt>Ricorrenza</dt><dd>Occorrenza della serie <code>{{ a.src_recurring_event_id }}</code>{% if a.src_original_start %}, inizio originale {{ a.src_original_start }}{% endif %}</dd>{% endif %}
+        <dt>Recapiti nell'evento</dt>
+        <dd>
+          {% if contacts %}
+            <ul class="contacts-list">
+              {% for c in contacts %}<li>{{ c.value }} <span class="item-meta">({{ 'telefono' if c.type == 'phone' else 'email' }} · da {{ c.source }}{% if c.label %} · {{ c.label }}{% endif %})</span></li>{% endfor %}
+            </ul>
+          {% else %}<span class="muted">nessuno</span>{% endif %}
+        </dd>
+        <dt>Modifica su Google</dt><dd>{{ a.src_updated_at|rfc_dt or '—' }}</dd>
+        <dt>Ultima verifica riuscita</dt><dd>{{ a.last_synced_at|dt }}</dd>
+        <dt>Ultimo controllo</dt><dd>{{ a.last_checked_at|dt }}</dd>
+      </dl>
+      <h3>Descrizione</h3>
+      {% if description %}<div class="pre small">{{ description }}</div>{% else %}<p class="muted">Nessuna descrizione.</p>{% endif %}
+      <p class="item-meta">Titolo, orari e annullamenti si modificano in Google Calendar; poi si preme «Aggiorna».</p>
+    </section>
+
+    <div>
+      <section class="card" id="locale">
+        <h2>Famiglia</h2>
+        {% if a.family_id %}
+          <p>Collegato a <a href="{{ url_for('families.detail', family_id=a.family_id) }}"><strong>{{ a.family_name }}</strong></a>
+            {% if a.family_archived_at %}<span class="badge badge-archived">Famiglia archiviata</span>{% endif %}</p>
+          <form method="post" action="{{ url_for('appointments.choose_lead', appointment_id=a.id) }}" class="actions">
+            {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+            <label for="lead_id" class="label">L'incontro riguarda</label>
+            <select id="lead_id" name="lead_id">
+              <option value="">Tutta la famiglia</option>
+              {% for lead in leads %}<option value="{{ lead.id }}" {{ 'selected' if lead.id == a.student_lead_id }}>{{ lead.display_name }} · {{ lead.school_year or 'anno non indicato' }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-small">Salva</button>
+          </form>
+          {% if new_contacts %}
+            <div class="flash flash-info small">Recapiti presenti nell'evento ma non nella scheda (verifica manuale, nessun aggiornamento automatico):
+              {% for c in new_contacts %}<strong>{{ c.value }}</strong> <span class="item-meta">(da {{ c.source }})</span>{% if not loop.last %}, {% endif %}{% endfor %}
+            </div>
+          {% endif %}
+          <a class="btn btn-quiet btn-small" href="{{ url_for('appointments.change_link_form', appointment_id=a.id) }}">Cambia collegamento</a>
+        {% else %}
+          <div class="flash flash-warning">Da collegare: scegli una famiglia esistente oppure creala dai dati dell'evento.</div>
+          <h3>Possibili corrispondenze</h3>
+          {% if suggestions %}
+            <ul class="item-list">
+              {% for match in suggestions %}
+                <li>
+                  <div class="item-main">
+                    <a href="{{ url_for('families.detail', family_id=match.family_id) }}" target="_blank" rel="noopener">{{ match.display_name }}</a>
+                    <div class="item-meta">{{ match.reasons|join(', ') }}{% if match.archived %} · archiviata{% endif %}</div>
+                  </div>
+                  <form method="post" action="{{ url_for('appointments.link', appointment_id=a.id) }}" class="item-side">
+                    {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+                    <input type="hidden" name="family_id" value="{{ match.family_id }}">
+                    <button type="submit" class="btn btn-small">Collega</button>
+                  </form>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty">Nessuna famiglia con gli stessi recapiti o un titolo simile.</p>
+          {% endif %}
+
+          <form method="get" action="{{ url_for('appointments.detail', appointment_id=a.id) }}" class="actions">
+            <input type="search" name="q" value="{{ query }}" placeholder="Cerca famiglia, bambino, telefono o email" aria-label="Cerca famiglia">
+            <button type="submit" class="btn btn-secondary btn-small">Cerca</button>
+          </form>
+          {% if query %}
+            <ul class="item-list">
+              {% for family in results %}
+                <li>
+                  <div class="item-main"><a href="{{ url_for('families.detail', family_id=family.id) }}" target="_blank" rel="noopener">{{ family.display_name }}</a>
+                    <div class="item-meta">{{ family.primary_adult_name or '' }} {{ family.primary_phone or '' }}{% if family.archived_at %} · archiviata{% endif %}</div></div>
+                  <form method="post" action="{{ url_for('appointments.link', appointment_id=a.id) }}" class="item-side">
+                    {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+                    <input type="hidden" name="family_id" value="{{ family.id }}">
+                    <button type="submit" class="btn btn-small">Collega</button>
+                  </form>
+                </li>
+              {% else %}
+                <li class="empty">Nessun risultato per «{{ query }}».</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          <div class="actions">
+            <a class="btn" href="{{ url_for('appointments.create_family', appointment_id=a.id) }}">Crea famiglia dall'evento</a>
+          </div>
+          {% if not a.preparation and not has_report and not interactions %}
+            <details class="panel">
+              <summary>Non è un appuntamento Admissions?</summary>
+              <div class="panel-body">
+                <p class="small">Toglie l'evento dall'elenco e lo segna come «Ignorato» (revocabile). Google Calendar non viene modificato.</p>
+                <form method="post" action="{{ url_for('appointments.remove', appointment_id=a.id) }}">{{ csrf() }}
+                  <button type="submit" class="btn btn-quiet btn-small">Togli dagli appuntamenti</button></form>
+              </div>
+            </details>
+          {% endif %}
+        {% endif %}
+      </section>
+
+      <section class="card" id="preparazione">
+        <h2>Preparazione dell'incontro</h2>
+        <form method="post" action="{{ url_for('appointments.preparation', appointment_id=a.id) }}">
+          {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+          <textarea name="preparation" maxlength="8000" aria-label="Preparazione" placeholder="Cosa chiedere o mostrare, documenti da preparare…">{{ a.preparation or '' }}</textarea>
+          <div class="form-actions"><button type="submit" class="btn btn-secondary btn-small">Salva preparazione</button></div>
+        </form>
+      </section>
+
+      <section class="card" id="resoconto">
+        <h2>Resoconto della visita</h2>
+        {% if discrepancy %}
+          <div class="flash flash-warning">La visita è registrata il {{ a.visited_at|d }}, ma su Google Calendar l'evento ora è {{ when(a) }}. La data della visita non viene cambiata.</div>
+        {% endif %}
+        {% if a.updated_by and has_report %}<p class="item-meta">Ultima modifica {{ a.updated_at|dt }} ({{ a.updated_by }})</p>{% endif %}
+        <form method="post" action="{{ url_for('appointments.report', appointment_id=a.id) }}">
+          {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+          <fieldset>
+            <legend>Esito dell'incontro</legend>
+            {% for value in outcomes %}
+              <label class="check"><input type="radio" name="visit_outcome" value="{{ value }}" {{ 'checked' if a.visit_outcome == value }}> {{ value|label }}</label>
+            {% endfor %}
+            <label class="check"><input type="radio" name="visit_outcome" value="" {{ 'checked' if not a.visit_outcome }}> <span class="muted">Non ancora registrato</span></label>
+          </fieldset>
+          <div class="form-grid">
+            <div class="field"><label for="visited_at">Data e ora effettive della visita</label>
+              <input type="datetime-local" id="visited_at" name="visited_at" value="{{ default_visited|local_input }}">
+              <span class="hint">Il calendario da solo non attesta che la famiglia sia venuta.</span></div>
+            <div class="field wide"><label for="visit_report">Sintesi: fatti e domande della famiglia</label>
+              <textarea id="visit_report" name="visit_report" maxlength="8000">{{ a.visit_report or '' }}</textarea></div>
+            <div class="field wide"><label for="local_observations">Osservazioni personali pertinenti (campo distinto)</label>
+              <textarea id="local_observations" name="local_observations" maxlength="4000">{{ a.local_observations or '' }}</textarea>
+              <span class="hint">Niente dati sensibili superflui: salute, reddito, documenti, vicende familiari.</span></div>
+          </div>
+          {% if a.family_id %}
+            <fieldset class="spaced">
+              <legend>Prossimo passo (facoltativo, salvato insieme al resoconto)</legend>
+              <input type="hidden" name="next_new_id" value="{{ new_uuid() }}">
+              <div class="form-grid">
+                <div class="field"><label for="next_action">Azione</label>
+                  <select id="next_action" name="next_action"><option value="">Nessuna</option>
+                    {% for value in followup_actions %}<option value="{{ value }}">{{ value|label }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="next_due_on">Entro il</label>
+                  <input type="date" id="next_due_on" name="next_due_on" value="{{ today_iso }}"></div>
+                <div class="field wide"><label for="next_note">Nota</label>
+                  <input type="text" id="next_note" name="next_note" maxlength="2000"></div>
+              </div>
+            </fieldset>
+          {% endif %}
+          <div class="form-actions"><button type="submit" class="btn">Salva resoconto</button>
+            {% if a.family_id %}<a href="{{ url_for('families.detail', family_id=a.family_id) }}#offerte">Condizioni comunicate: proposte nella scheda famiglia</a>{% endif %}</div>
+        </form>
+      </section>
+
+      {% if interactions %}
+        <section class="card">
+          <h2>Cronologia dell'evento</h2>
+          <ul class="timeline">
+            {% for item in interactions %}
+              <li><span class="tl-when">{{ item.occurred_at|dt }}</span>
+                <span><span class="tl-kind">{{ item.type|label }}</span> · {{ item.previous_state|label }} → {{ item.next_state|label }}
+                  <div class="item-meta">{{ item.text }} ({{ item.origin }})</div></span></li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

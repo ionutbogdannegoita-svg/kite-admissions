@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% block title %}{{ 'Modifica famiglia' if family else 'Nuova famiglia' }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ 'Modifica ' ~ family.display_name if family else 'Nuova famiglia' }}</h1>
+      <div class="sub">Dati minimi: un'etichetta riconoscibile. Adulto e almeno un recapito sono consigliati, mai inventati.</div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+
+  <form method="post" class="card">
+    {{ csrf() }}
+    {% if family %}
+      <input type="hidden" name="revision" value="{{ form.revision }}">
+    {% else %}
+      <input type="hidden" name="new_id" value="{{ form.new_id }}">
+    {% endif %}
+
+    {% if duplicates %}
+      <div class="flash flash-warning" role="alert">
+        <strong>Possibili doppioni.</strong> Controlla prima di salvare: telefono ed email possono essere condivisi da nuclei distinti.
+        <ul>
+          {% for match in duplicates %}
+            <li>
+              <a href="{{ url_for('families.detail', family_id=match.family_id) }}" target="_blank" rel="noopener">{{ match.display_name }}</a>
+              — {{ match.reasons|join(', ') }}{% if match.archived %} (archiviata){% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+        <label class="check"><input type="checkbox" name="confirm_distinct" value="1"> Confermo che è un nucleo distinto e voglio salvarlo</label>
+      </div>
+    {% endif %}
+
+    <fieldset>
+      <legend>Famiglia</legend>
+      <div class="form-grid">
+        <div class="field">
+          <label for="display_name" class="required">Etichetta famiglia</label>
+          <input type="text" id="display_name" name="display_name" value="{{ form.display_name or '' }}" required maxlength="200" placeholder="es. Famiglia Rossi" autofocus>
+        </div>
+        <div class="field">
+          <label for="contact_source">Fonte del contatto</label>
+          <input type="text" id="contact_source" name="contact_source" value="{{ form.contact_source or '' }}" list="sources" maxlength="120">
+          <datalist id="sources">{% for source in sources %}<option value="{{ source }}">{% endfor %}</datalist>
+        </div>
+        <div class="field">
+          <label for="first_contact_on">Data primo contatto</label>
+          <input type="date" id="first_contact_on" name="first_contact_on" value="{{ form.first_contact_on or '' }}">
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Adulto di riferimento</legend>
+      <div class="form-grid">
+        <div class="field"><label for="primary_adult_name">Nome e cognome</label>
+          <input type="text" id="primary_adult_name" name="primary_adult_name" value="{{ form.primary_adult_name or '' }}" maxlength="200"></div>
+        <div class="field"><label for="primary_phone">Telefono</label>
+          <input type="tel" id="primary_phone" name="primary_phone" value="{{ form.primary_phone or '' }}" maxlength="60"></div>
+        <div class="field"><label for="primary_email">Email</label>
+          <input type="email" id="primary_email" name="primary_email" value="{{ form.primary_email or '' }}" maxlength="200"></div>
+      </div>
+    </fieldset>
+
+    <details class="panel" {{ 'open' if form.secondary_adult_name or form.secondary_phone or form.secondary_email }}>
+      <summary>Secondo adulto e recapiti (facoltativo)</summary>
+      <div class="panel-body form-grid">
+        <div class="field"><label for="secondary_adult_name">Nome e cognome</label>
+          <input type="text" id="secondary_adult_name" name="secondary_adult_name" value="{{ form.secondary_adult_name or '' }}" maxlength="200"></div>
+        <div class="field"><label for="secondary_phone">Telefono</label>
+          <input type="tel" id="secondary_phone" name="secondary_phone" value="{{ form.secondary_phone or '' }}" maxlength="60"></div>
+        <div class="field"><label for="secondary_email">Email</label>
+          <input type="email" id="secondary_email" name="secondary_email" value="{{ form.secondary_email or '' }}" maxlength="200"></div>
+      </div>
+    </details>
+
+    <div class="field wide">
+      <label for="preliminary_notes">Note preliminari</label>
+      <textarea id="preliminary_notes" name="preliminary_notes" maxlength="4000" placeholder="Solo informazioni utili al contatto e alla visita.">{{ form.preliminary_notes or '' }}</textarea>
+      <span class="hint">Niente documenti d'identità, codice fiscale, dati bancari, reddito, diagnosi o vicende familiari.</span>
+    </div>
+
+    {% if not family %}
+      <fieldset class="spaced">
+        <legend>Primo bambino (facoltativo, si può aggiungere dopo)</legend>
+        <div class="form-grid">
+          <div class="field"><label for="lead_display_name">Nome o riferimento provvisorio</label>
+            <input type="text" id="lead_display_name" name="lead_display_name" value="{{ form.lead_display_name or '' }}" maxlength="200"></div>
+          <div class="field"><label for="lead_school_year">Anno scolastico</label>
+            <select id="lead_school_year" name="lead_school_year">
+              <option value="">Non indicato</option>
+              {% for year in years %}<option value="{{ year }}" {{ 'selected' if form.lead_school_year == year }}>{{ year }}</option>{% endfor %}
+            </select></div>
+          <div class="field"><label for="lead_grade">Classe o ciclo</label>
+            <input type="text" id="lead_grade" name="lead_grade" value="{{ form.lead_grade or '' }}" list="grades" maxlength="80">
+            <datalist id="grades">{% for grade in grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
+        </div>
+      </fieldset>
+    {% endif %}
+
+    <div class="form-actions">
+      <button type="submit" class="btn">Salva famiglia</button>
+      <a href="{{ url_for('families.detail', family_id=family.id) if family else url_for('families.index') }}">Annulla</a>
+    </div>
+  </form>
+{% endblock %}

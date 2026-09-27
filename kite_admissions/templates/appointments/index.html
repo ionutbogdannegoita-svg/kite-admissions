@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_appt.html" import when, status_badges, link_state %}
+{% block title %}Appuntamenti{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Appuntamenti</h1>
+      <div class="sub">Copia degli eventi Google Calendar selezionati. Orari e annullamenti si cambiano in Google Calendar.</div>
+    </div>
+    {% include "_refresh_form.html" %}
+  </div>
+
+  <section class="card">
+    {% include "_calendar_status.html" %}
+  </section>
+
+  <nav class="tabs" aria-label="Filtri appuntamenti">
+    {% for key, title in views.items() %}
+      <a href="{{ url_for('appointments.index', vista=key) }}" class="{{ 'active' if key == view }}">
+        {{ title }}{% if key in counts %} <span class="count {{ 'zero' if not counts[key] else ('warn' if key in ['da_collegare', 'non_verificati'] else '') }}">{{ counts[key] }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+
+  <section class="card">
+    <table class="list">
+      <thead><tr><th>Quando</th><th>Evento</th><th>Famiglia</th><th>Visita</th></tr></thead>
+      <tbody>
+        {% for a in appointments %}
+          <tr class="{{ 'muted-row' if a.src_status == 'CANCELLED_SOURCE' }}">
+            <td class="nowrap">{{ when(a) }}</td>
+            <td>
+              <a href="{{ url_for('appointments.detail', appointment_id=a.id) }}"><strong>{{ a.src_title or '(senza titolo)' }}</strong></a>
+              <div>{{ status_badges(a) }}</div>
+            </td>
+            <td>{{ link_state(a) }}</td>
+            <td>{% if a.visit_outcome %}<span class="badge badge-{{ a.visit_outcome|lower }}">{{ a.visit_outcome|label }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="empty">Nessun appuntamento in questa vista.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

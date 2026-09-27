@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import lead_badge %}
+{% block title %}Famiglie{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Famiglie</h1>
+      <div class="sub">{{ families|length }} {{ 'famiglia' if families|length == 1 else 'famiglie' }}{% if view == 'archiviate' %} archiviate{% elif view == 'attive' %} attive{% endif %}</div>
+    </div>
+    <a class="btn" href="{{ url_for('families.create') }}">+ Nuova famiglia</a>
+  </div>
+
+  <form class="card" method="get" action="{{ url_for('families.index') }}">
+    <div class="form-grid">
+      <div class="field wide">
+        <label for="q">Cerca</label>
+        <input type="search" id="q" name="q" value="{{ query }}" autofocus
+               placeholder="Cognome o etichetta, adulto, nome del bambino, telefono o email">
+      </div>
+      <div class="field">
+        <label for="anno">Anno scolastico</label>
+        <select id="anno" name="anno" data-autosubmit>
+          <option value="">Tutti</option>
+          {% for year in years %}<option value="{{ year }}" {{ 'selected' if year == school_year }}>{{ year }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="stato">Stato richiesta</label>
+        <select id="stato" name="stato" data-autosubmit>
+          <option value="">Tutti</option>
+          {% for value in ['IN_CORSO', 'IN_PAUSA', 'ISCRITTO', 'NON_PROSEGUE'] %}
+            <option value="{{ value }}" {{ 'selected' if value == status }}>{{ value|label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="vista">Vista</label>
+        <select id="vista" name="vista" data-autosubmit>
+          <option value="attive" {{ 'selected' if view == 'attive' }}>Attive</option>
+          <option value="archiviate" {{ 'selected' if view == 'archiviate' }}>Archiviate</option>
+          <option value="tutte" {{ 'selected' if view == 'tutte' }}>Tutte</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-secondary">Cerca</button>
+      {% if query or school_year or status or view != 'attive' %}<a href="{{ url_for('families.index') }}">Azzera filtri</a>{% endif %}
+    </div>
+  </form>
+
+  <section class="card">
+    <table class="list">
+      <thead>
+        <tr><th>Famiglia</th><th>Recapiti</th><th>Richieste</th><th>Prossimo passo</th></tr>
+      </thead>
+      <tbody>
+        {% for family in families %}
+          <tr>
+            <td>
+              <a href="{{ url_for('families.detail', family_id=family.id) }}"><strong>{{ family.display_name }}</strong></a>
+              {% if family.archived_at %}<span class="badge badge-archived">Archiviata</span>{% endif %}
+              {% if family.primary_adult_name %}<div class="item-meta">{{ family.primary_adult_name }}</div>{% endif %}
+            </td>
+            <td class="small">
+              {% for key in ['primary_phone', 'primary_email', 'secondary_phone', 'secondary_email'] %}
+                {% if family[key] %}<div>{{ family[key] }}</div>{% endif %}
+              {% endfor %}
+              {% if not (family.primary_phone or family.primary_email or family.secondary_phone or family.secondary_email) %}
+                <span class="badge badge-warn">Nessun recapito</span>
+              {% endif %}
+            </td>
+            <td class="small">
+              {% for lead in leads_map[family.id] %}
+                <div>{{ lead.display_name }} · {{ lead.school_year or 'anno non indicato' }}{% if lead.grade %} · {{ lead.grade }}{% endif %} {{ lead_badge(lead.status) }}</div>
+              {% else %}
+                <span class="muted">Nessun alunno indicato</span>
+              {% endfor %}
+            </td>
+            <td class="small">
+              {% set step = next_steps.get(family.id) if next_steps is defined else none %}
+              {% if step %}
+                {% if step.missing %}<span class="badge badge-danger">Senza prossimo passo</span>{% else %}{{ step.label }}{% endif %}
+                {% if step.overdue and not step.missing %}<span class="badge badge-scaduto">Scaduto</span>{% endif %}
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="empty">Nessuna famiglia trovata.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

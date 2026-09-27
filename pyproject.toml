@@ -1,0 +1,9 @@
+[project]
+name = "kite-admissions"
+version = "1.0.0"
+description = "CRM locale per le ammissioni della Latina International School"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

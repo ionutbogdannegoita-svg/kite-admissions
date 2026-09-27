@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% block title %}{{ 'Modifica richiesta' if lead else 'Nuova richiesta' }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ 'Modifica richiesta' if lead else 'Nuova richiesta' }}</h1>
+      <div class="sub"><a href="{{ url_for('families.detail', family_id=family.id) }}">{{ family.display_name }}</a> · una richiesta per figlio e anno scolastico</div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+  <form method="post" class="card">
+    {{ csrf() }}
+    {% if lead %}<input type="hidden" name="revision" value="{{ form.revision }}">
+    {% else %}<input type="hidden" name="new_id" value="{{ form.new_id }}">{% endif %}
+
+    {% if similar %}
+      <div class="flash flash-warning" role="alert">
+        <strong>Richiesta simile già presente in questa famiglia per lo stesso anno:</strong>
+        <ul>{% for other in similar %}<li>{{ other.display_name }} · {{ other.school_year or 'anno non indicato' }} · {{ other.status|label }}</li>{% endfor %}</ul>
+        Le richieste non vengono unite automaticamente.
+        <label class="check"><input type="checkbox" name="confirm_similar" value="1"> È un'altra richiesta: salvala comunque</label>
+      </div>
+    {% endif %}
+
+    <div class="form-grid">
+      <div class="field"><label for="display_name" class="required">Nome o riferimento provvisorio</label>
+        <input type="text" id="display_name" name="display_name" value="{{ form.display_name or '' }}" required maxlength="200" autofocus></div>
+      <div class="field"><label for="school_year">Anno scolastico</label>
+        <select id="school_year" name="school_year">
+          <option value="">Non indicato</option>
+          {% for year in years %}<option value="{{ year }}" {{ 'selected' if form.school_year == year }}>{{ year }}</option>{% endfor %}
+          {% if form.school_year and form.school_year not in years %}<option value="{{ form.school_year }}" selected>{{ form.school_year }}</option>{% endif %}
+        </select></div>
+      <div class="field"><label for="grade">Classe o ciclo</label>
+        <input type="text" id="grade" name="grade" value="{{ form.grade or '' }}" list="grades" maxlength="80">
+        <datalist id="grades">{% for grade in grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
+      <div class="field"><label for="origin">Provenienza o zona</label>
+        <input type="text" id="origin" name="origin" value="{{ form.origin or '' }}" maxlength="200"></div>
+      <div class="field"><label for="birth_year">Anno di nascita (solo se utile)</label>
+        <input type="number" id="birth_year" name="birth_year" value="{{ form.birth_year or '' }}" min="1990" max="2100"></div>
+      {% if lead and lead.status == 'IN_PAUSA' %}
+        <div class="field"><label for="review_on" class="required">Data di riesame</label>
+          <input type="date" id="review_on" name="review_on" value="{{ form.review_on or '' }}" required></div>
+      {% endif %}
+      <div class="field wide"><label for="notes">Note sulla richiesta</label>
+        <textarea id="notes" name="notes" maxlength="4000">{{ form.notes or '' }}</textarea></div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Salva richiesta</button>
+      <a href="{{ url_for('families.detail', family_id=family.id) }}#richieste">Annulla</a>
+    </div>
+  </form>
+{% endblock %}

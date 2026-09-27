@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% from "_appt.html" import when %}
+{% block title %}Cambia collegamento{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Cambia collegamento</h1>
+      <div class="sub"><a href="{{ url_for('appointments.detail', appointment_id=a.id) }}">{{ a.src_title or '(senza titolo)' }}</a> · {{ when(a) }}</div>
+    </div>
+  </div>
+
+  {% if target %}
+    <section class="card alert">
+      <h2>Conferma il nuovo collegamento</h2>
+      <dl class="facts">
+        <dt>Famiglia attuale</dt><dd><a href="{{ url_for('families.detail', family_id=a.family_id) }}" target="_blank" rel="noopener">{{ a.family_name }}</a></dd>
+        <dt>Nuova famiglia</dt><dd><a href="{{ url_for('families.detail', family_id=target.id) }}" target="_blank" rel="noopener"><strong>{{ target.display_name }}</strong></a>{% if target.archived_at %} <span class="badge badge-archived">archiviata</span>{% endif %}</dd>
+      </dl>
+      {% if has_report %}
+        <div class="flash flash-warning">Questo appuntamento ha un resoconto: anche il resoconto seguirà l'appuntamento nella nuova famiglia.</div>
+      {% endif %}
+      <div class="flash flash-info">Offerte ({{ offers_count }}) e follow-up aperti ({{ followups_count }}) della famiglia attuale <strong>non</strong> vengono trasferiti. Il riferimento al figlio viene azzerato.</div>
+      <form method="post" action="{{ url_for('appointments.change_link', appointment_id=a.id) }}" class="form-actions">
+        {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+        <input type="hidden" name="family_id" value="{{ target.id }}">
+        <button type="submit" class="btn">Conferma il cambio</button>
+        <a href="{{ url_for('appointments.change_link_form', appointment_id=a.id) }}">Scegli un'altra famiglia</a>
+      </form>
+    </section>
+  {% else %}
+    <section class="card">
+      <p>Collegato ora a <strong>{{ a.family_name }}</strong>. Cerca la famiglia corretta:</p>
+      <form method="get" class="actions">
+        <input type="search" name="q" value="{{ query }}" placeholder="Famiglia, bambino, telefono o email" autofocus aria-label="Cerca famiglia">
+        <button type="submit" class="btn btn-secondary">Cerca</button>
+      </form>
+      {% if query %}
+        <ul class="item-list">
+          {% for family in results %}
+            <li><div class="item-main">{{ family.display_name }} <span class="item-meta">{{ family.primary_adult_name or '' }} {{ family.primary_phone or '' }}</span></div>
+              <a class="btn btn-small btn-secondary" href="{{ url_for('appointments.change_link_form', appointment_id=a.id, famiglia=family.id) }}">Scegli</a></li>
+          {% else %}
+            <li class="empty">Nessun risultato.</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <p><a href="{{ url_for('appointments.detail', appointment_id=a.id) }}">Annulla</a></p>
+    </section>
+  {% endif %}
+{% endblock %}

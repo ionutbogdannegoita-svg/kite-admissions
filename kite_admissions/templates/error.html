@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Errore {{ code }}{% endblock %}
+{% block content %}
+  <section class="card narrow">
+    <h1>{{ message }}</h1>
+    {% if detail %}<p>{{ detail }}</p>{% endif %}
+    <p><a class="btn" href="{{ url_for('today.index') }}">Torna a Oggi</a></p>
+  </section>
+{% endblock %}

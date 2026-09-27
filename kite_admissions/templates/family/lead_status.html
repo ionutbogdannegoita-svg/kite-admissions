@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box, lead_badge %}
+{% block title %}Stato della richiesta{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Stato della richiesta: {{ lead.display_name }}</h1>
+      <div class="sub"><a href="{{ url_for('families.detail', family_id=family.id) }}">{{ family.display_name }}</a>
+        · {{ lead.school_year or 'anno non indicato' }} · stato attuale {{ lead_badge(lead.status) }}</div>
+    </div>
+  </div>
+  {{ errors_box(errors) }}
+  <form method="post" class="card">
+    {{ csrf() }}
+    <input type="hidden" name="revision" value="{{ lead.revision }}">
+    <fieldset>
+      <legend>Nuovo stato</legend>
+      {% for value, hint in [
+          ('IN_CORSO', 'La pratica è aperta e seguita.'),
+          ('IN_PAUSA', 'Sospesa fino a una data di riesame.'),
+          ('ISCRITTO', 'Conferma amministrativa effettiva, con data e riferimento.'),
+          ('NON_PROSEGUE', 'La famiglia non prosegue per questa richiesta.')] %}
+        {% if value != lead.status %}
+          <label class="check"><input type="radio" name="new_status" value="{{ value }}" {{ 'checked' if form.new_status == value }} required>
+            <span><strong>{{ value|label }}</strong> — <span class="muted">{{ hint }}</span></span></label>
+        {% endif %}
+      {% endfor %}
+    </fieldset>
+    <div class="form-grid">
+      <div class="field" data-show-when="new_status=IN_PAUSA">
+        <label for="review_on" class="required">Data di riesame</label>
+        <input type="date" id="review_on" name="review_on" value="{{ form.review_on or '' }}" min="{{ today }}">
+      </div>
+      <div class="field" data-show-when="new_status=ISCRITTO|NON_PROSEGUE">
+        <label for="closed_on" class="required">Data</label>
+        <input type="date" id="closed_on" name="closed_on" value="{{ form.closed_on or '' }}" max="{{ today }}">
+      </div>
+      <div class="field" data-show-when="new_status=ISCRITTO">
+        <label for="enrollment_ref" class="required">Riferimento iscrizione</label>
+        <input type="text" id="enrollment_ref" name="enrollment_ref" value="{{ form.enrollment_ref or '' }}" maxlength="200" placeholder="es. domanda n., protocollo">
+      </div>
+      <div class="field" data-show-when="new_status=NON_PROSEGUE">
+        <label for="closure_reason">Motivo</label>
+        <input type="text" id="closure_reason" name="closure_reason" value="{{ form.closure_reason or '' }}" maxlength="500">
+      </div>
+      <div class="field wide">
+        <label for="note" class="{{ 'required' if lead.status in ['ISCRITTO', 'NON_PROSEGUE'] }}">Nota breve</label>
+        <textarea id="note" name="note" maxlength="2000">{{ form.note or '' }}</textarea>
+        {% if lead.status in ['ISCRITTO', 'NON_PROSEGUE'] %}<span class="hint">Obbligatoria per riaprire o rettificare una richiesta chiusa.</span>{% endif %}
+      </div>
+    </div>
+    <p class="item-meta">Il cambio di stato viene registrato nella cronologia con stato precedente e successivo.</p>
+    <div class="form-actions">
+      <button type="submit" class="btn">Conferma cambio di stato</button>
+      <a href="{{ url_for('families.detail', family_id=family.id) }}#richieste">Annulla</a>
+    </div>
+  </form>
+{% endblock %}

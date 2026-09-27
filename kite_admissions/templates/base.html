@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · {{ app_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('today.index') }}">
+      <span class="brand-mark">KITE</span>
+      <span class="brand-name">Admissions</span>
+      <span class="brand-school">Latina International School</span>
+    </a>
+    <nav class="mainnav" aria-label="Viste principali">
+      <a href="{{ url_for('today.index') }}" class="{{ 'active' if active == 'today' }}">Oggi</a>
+      <a href="{{ url_for('appointments.index') }}" class="{{ 'active' if active == 'appointments' }}">Appuntamenti</a>
+      <a href="{{ url_for('families.index') }}" class="{{ 'active' if active == 'families' }}">Famiglie</a>
+      <a href="{{ url_for('panel.index') }}" class="{{ 'active' if active == 'panel' }}">Dati e Google</a>
+    </nav>
+    <form method="post" action="{{ url_for('panel.shutdown') }}" class="quit">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-quiet" title="Arresta il programma sul PC">Chiudi applicazione</button>
+    </form>
+  </header>
+
+  {% include "_banners.html" %}
+
+  <main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flashes">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    {{ app_name }} {{ app_version }} · {{ school_name }} · uso locale su questo PC
+  </footer>
+</body>
+</html>

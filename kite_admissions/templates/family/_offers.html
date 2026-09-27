@@ -1,0 +1,91 @@
+{% from "_macros.html" import csrf %}
+<section class="card" id="offerte">
+  <div class="card-head">
+    <h2>Proposte economiche</h2>
+    <a class="btn btn-secondary btn-small" href="{{ url_for('offers.create', family_id=family.id) }}">+ Nuova proposta</a>
+  </div>
+  {% if not offer_scopes %}
+    <p class="empty">Nessuna proposta registrata.</p>
+  {% endif %}
+  {% for scope in offer_scopes %}
+    {% set current = scope.current %}
+    <h3>{{ 'Per ' ~ scope.lead_name if scope.lead_id else 'Proposta familiare' }}</h3>
+    <p class="small">
+      {% if current %}Proposta corrente: <strong>v{{ current.version_no }}</strong> · {{ current.proposed_fee_cents|euro }} {{ current.periodicity|label }} · comunicata il {{ current.communicated_at|dt }}
+      {% elif scope.latest_sent %}<span class="badge badge-warn">Nessuna proposta corrente</span> l'ultima comunicata (v{{ scope.latest_sent.version_no }}) è stata ritirata.
+      {% else %}<span class="muted">Nessuna proposta ancora comunicata.</span>{% endif %}
+    </p>
+    {% for offer in scope.versions|reverse %}
+      {% set is_current = current and offer.id == current.id %}
+      <article class="offer {{ 'current' if is_current }} {{ 'withdrawn' if offer.status == 'RITIRATA' }} {{ 'superseded' if offer.status == 'COMUNICATA' and not is_current }}" id="offerta-{{ offer.id }}">
+        <div class="offer-head">
+          <div>
+            <strong>v{{ offer.version_no }}</strong>
+            <span class="badge badge-{{ offer.status|lower }}">{{ offer.status|label }}</span>
+            {% if is_current %}<span class="badge badge-current">Corrente</span>{% elif offer.status == 'COMUNICATA' %}<span class="badge">Sostituita</span>{% endif %}
+            {% if offer.valid_until %}<span class="item-meta">valida fino al {{ offer.valid_until|d }}</span>{% endif %}
+          </div>
+          <div class="amount">{{ offer.proposed_fee_cents|euro if offer.proposed_fee_cents is not none else '—' }} <span class="small muted">{{ offer.periodicity|label }}</span></div>
+        </div>
+        <div class="small">
+          {% if offer.standard_fee_cents is not none %}Retta standard {{ offer.standard_fee_cents|euro }} {{ offer.periodicity|label }}{% set discount = offer_discount(offer) %}{% if discount %} · sconto {{ discount|euro }}{% endif %}{% endif %}
+        </div>
+        {% set services = offer_services(offer) %}
+        {% if services %}
+          <ul class="small">
+            {% for service in services %}
+              <li>{{ service.description }} — {{ 'incluso' if service.included else 'aggiuntivo' }}{% if service.amount_cents is not none %} · {{ service.amount_cents|euro }} {{ service.periodicity|label }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if offer.conditions %}<div class="small pre">{{ offer.conditions }}</div>{% endif %}
+        <div class="item-meta">
+          {% if offer.communicated_at %}Comunicata il {{ offer.communicated_at|dt }} da {{ offer.communicated_by }}{% if offer.communication_channel %} · {{ offer.communication_channel }}{% endif %}{% else %}Bozza creata {{ offer.created_at|dt }}{% endif %}
+          {% if offer.status == 'RITIRATA' %} · ritirata il {{ offer.withdrawn_at|dt }}: {{ offer.withdrawal_reason }}{% endif %}
+        </div>
+
+        <div class="actions">
+          {% if offer.status == 'BOZZA' %}
+            <a class="btn btn-secondary btn-small" href="{{ url_for('offers.edit', family_id=family.id, offer_id=offer.id) }}">Modifica bozza</a>
+            <form method="post" action="{{ url_for('offers.communicate', family_id=family.id, offer_id=offer.id) }}" class="actions">
+              {{ csrf() }}<input type="hidden" name="revision" value="{{ offer.revision }}">
+              <select name="channel" aria-label="Canale"><option value="">Canale (facoltativo)</option>
+                {% for channel in offer_channels %}<option value="{{ channel }}">{{ channel }}</option>{% endfor %}</select>
+              <button type="submit" class="btn btn-small">Segna come comunicata</button>
+            </form>
+            <details class="panel">
+              <summary>Elimina bozza</summary>
+              <div class="panel-body">
+                <form method="post" action="{{ url_for('offers.delete', family_id=family.id, offer_id=offer.id) }}" class="actions">
+                  {{ csrf() }}<input type="hidden" name="revision" value="{{ offer.revision }}">
+                  <label class="check"><input type="checkbox" name="confirm" value="1" required> Confermo</label>
+                  <button type="submit" class="btn btn-danger btn-small">Elimina</button>
+                </form>
+              </div>
+            </details>
+          {% else %}
+            {% if not scope.draft %}
+              <form method="post" action="{{ url_for('offers.new_version', family_id=family.id, offer_id=offer.id) }}">
+                {{ csrf() }}<input type="hidden" name="new_id" value="{{ new_uuid() }}">
+                <button type="submit" class="btn btn-secondary btn-small">Crea nuova versione</button>
+              </form>
+            {% endif %}
+            {% if offer.status == 'COMUNICATA' %}
+              <details class="panel">
+                <summary>Ritira questa proposta</summary>
+                <div class="panel-body">
+                  <form method="post" action="{{ url_for('offers.withdraw', family_id=family.id, offer_id=offer.id) }}">
+                    {{ csrf() }}<input type="hidden" name="revision" value="{{ offer.revision }}">
+                    <label class="label" for="reason-{{ offer.id }}">Motivo del ritiro</label>
+                    <input type="text" id="reason-{{ offer.id }}" name="reason" required maxlength="500" placeholder="es. registrazione errata, condizioni superate">
+                    <div class="form-actions"><button type="submit" class="btn btn-danger btn-small">Ritira</button></div>
+                  </form>
+                </div>
+              </details>
+            {% endif %}
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  {% endfor %}
+</section>
