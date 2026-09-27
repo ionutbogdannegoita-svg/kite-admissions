@@ -386,6 +386,40 @@ def test_database_open_in_another_program_stops_the_restore_safely(app, client):
     assert app.extensions["kite"].recovery is None and app.extensions["kite"].settings.load()["post_restore"] is None
 
 
+def test_restore_is_refused_while_a_calendar_refresh_is_running(app, client, fake):
+    """B2: il ripristino non parte mai insieme a un aggiornamento Calendar; i dati restano intatti."""
+    import threading
+
+    state = app.extensions["kite"]
+    state.settings.update(lambda d: d.__setitem__("calendar", {"id": CAL, "summary": "Test"}))
+    create_family(client, display_name="Famiglia Esempio Prima Del Backup")
+    backup_path = manual_backup(client, app)
+    create_family(client, display_name="Famiglia Esempio Dopo Il Backup")
+    paths = state.paths
+    current = dataset.snapshot(paths.db_path)
+    release = threading.Event()
+    original = fake.list_events
+
+    def slow(*args, **kwargs):
+        release.wait(10)
+        return original(*args, **kwargs)
+
+    fake.list_events = slow
+    client.post("/appuntamenti/aggiorna")
+    try:
+        assert state.import_runner.running
+        response = client.post(f"/dati/ripristino/manuale/{backup_path.name}", data={"confirm_text": "RIPRISTINA"},
+                               follow_redirects=True)
+        assert "Aggiornamento da Google Calendar in corso" in response.get_data(as_text=True)
+        assert dataset.snapshot(paths.db_path) == current and state.settings.load()["post_restore"] is None
+    finally:
+        release.set()
+        state.import_runner.wait(10)
+    assert restore_via_ui(client, backup_path).status_code == 302
+    assert [row["display_name"] for row in dataset.snapshot(paths.db_path)["Family"]] == [
+        "Famiglia Esempio Prima Del Backup"]
+
+
 def test_restore_requires_explicit_confirmation(app, client):
     create_family(client, display_name="Famiglia Esempio Conferma")
     backup_path = manual_backup(client, app)

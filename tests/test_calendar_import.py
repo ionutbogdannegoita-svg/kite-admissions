@@ -185,6 +185,41 @@ def test_reactivation_and_second_cancellation_stay_distinguishable(db, fake, clo
     assert len({r["occurred_at"] for r in rows}) == 3
 
 
+def test_cancellation_and_reactivation_outside_the_window_are_read_by_id(db, fake, clock):
+    """AC03: evento spostato oltre la finestra, annullato e riattivato: letto per ID, una Interaction ciascuno."""
+    family_id = "11111111-1111-4111-8111-111111111111"
+    fake.put(CAL, timed("evt-1", "2026-10-05T09:30:00+02:00", title="Visita Esempio Rinviata"))
+    import_ids(db, fake, clock, "evt-1")
+    appointment_id = appointments(db)[0]["id"]
+    db.execute("INSERT INTO Family (id, display_name, created_at, updated_at, created_by, updated_by) "
+               "VALUES (?, 'Famiglia Esempio Rinvio', ?, ?, 'Ionut', 'Ionut')",
+               (family_id, "2026-10-01T08:00:00.000000Z", "2026-10-01T08:00:00.000000Z"))
+    db.execute("UPDATE Appointment SET family_id = ?, preparation = 'Preparazione di esempio' WHERE id = ?",
+               (family_id, appointment_id))
+    fake.put(CAL, timed("evt-1", "2027-06-10T09:30:00+02:00", title="Visita Esempio Rinviata"))  # oltre 180 giorni
+    fake.cancel(CAL, "evt-1", minimal=True)
+    clock.advance(hours=1)
+    summary, _ = refresh(db, fake, clock)
+    assert ("get_event", CAL, "evt-1") in fake.calls and (summary.listed, summary.cancelled) == (0, 1)
+    row = appointments(db)[0]
+    assert row["src_status"] == "CANCELLED_SOURCE" and row["src_start_at"] == "2026-10-05T07:30:00.000000Z"
+    assert (row["family_id"], row["preparation"]) == (family_id, "Preparazione di esempio")
+    refresh(db, fake, clock)  # ancora annullato: nessuna nuova riga
+    fake.put(CAL, timed("evt-1", "2027-06-10T09:30:00+02:00", title="Visita Esempio Rinviata"))
+    clock.advance(hours=1)
+    summary, _ = refresh(db, fake, clock)
+    assert (summary.listed, summary.reactivated) == (0, 1)
+    row = appointments(db)[0]
+    assert row["src_status"] == "CONFIRMED" and row["src_start_at"] == "2027-06-10T07:30:00.000000Z"
+    assert (row["family_id"], row["preparation"]) == (family_id, "Preparazione di esempio")
+    refresh(db, fake, clock)
+    rows = interactions(db, appointment_id=appointment_id)
+    assert [(r["type"], r["previous_state"], r["next_state"], r["family_id"]) for r in rows] == [
+        ("CALENDAR_CANCELLED", "CONFIRMED", "CANCELLED_SOURCE", None),
+        ("CALENDAR_REACTIVATED", "CANCELLED_SOURCE", "CONFIRMED", None),
+    ]
+
+
 @pytest.mark.parametrize("status", [403, 404, 410])
 def test_access_errors_never_delete_or_cancel(db, fake, clock, status):
     fake.put(CAL, timed("evt-1", "2026-10-05T09:30:00+02:00"))
@@ -474,6 +509,30 @@ def test_requested_scopes_are_read_only():
     source_text = open(google_api.__file__, encoding="utf-8").read()
     for verb in ("session.post", "session.put", "session.patch", "session.delete", ".insert(", ".update("):
         assert verb not in source_text
+
+
+def test_refresh_through_the_google_adapter_reads_all_pages_and_ids_with_get_only(db, fake, clock):
+    """AC02/AC03 con l'adapter Google su HTTP simulato: tutte le pagine, lettura per ID, 404 non è un annullamento."""
+    fake.put(CAL, timed("evt-1", "2026-10-05T09:30:00+02:00", title="Visita Esempio Uno"))
+    fake.put(CAL, timed("evt-2", "2026-10-06T09:30:00+02:00", title="Visita Esempio Due"))
+    import_ids(db, fake, clock, "evt-1", "evt-2")
+    session = RecordingSession([
+        FakeResponse(200, {"items": [timed("evt-nuovo", "2026-10-08T09:00:00+02:00", title="Evento Esempio Nuovo")],
+                           "nextPageToken": "pagina-2"}),
+        FakeResponse(200, {"items": [timed("evt-1", "2026-10-07T10:00:00+02:00", title="Visita Esempio Uno (spostata)")]}),
+        FakeResponse(404, {"error": {"code": 404}}),  # evt-2: assente dalla finestra e non trovato per ID
+    ])
+    clock.advance(hours=1)
+    summary, preview = refresh(db, google_api.GoogleCalendarSource(session, page_size=1), clock)
+    assert [call[0] for call in session.calls] == ["GET", "GET", "GET"]
+    assert all(call[1].startswith(google_api.API_BASE + "/calendars/") for call in session.calls)
+    assert session.calls[1][2]["pageToken"] == "pagina-2" and session.calls[2][1].endswith("/events/evt-2")
+    assert (summary.pages, summary.listed, summary.updated, summary.not_verified) == (2, 2, 1, 1)
+    assert summary.status == "PARTIAL" and set(preview.candidates) == {"evt-nuovo"}
+    rows = {row["google_event_id"]: row for row in appointments(db)}
+    assert rows["evt-1"]["src_title"] == "Visita Esempio Uno (spostata)"
+    assert rows["evt-2"]["src_status"] == "CONFIRMED" and rows["evt-2"]["verification_state"] == "NOT_VERIFIED"
+    assert rows["evt-2"]["src_title"] == "Visita Esempio Due" and interactions(db) == []
 
 
 # --- Collegamento Google e credenziali ------------------------------------------------------
