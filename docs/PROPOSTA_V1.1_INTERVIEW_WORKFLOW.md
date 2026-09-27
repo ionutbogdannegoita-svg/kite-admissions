@@ -2,7 +2,7 @@
 
 Specifica operativa · versione 1.0 · 27 settembre 2026 · base `v1.0.0` (`7452456`, schema 1)
 
-**Stato: approvata dal titolare il 27/09/2026, con tutte le Owner Decision risolte (§9).** È la specifica operativa della Issue «KITE Admissions v1.1 — Interview Workflow». È un upgrade *mirato* della V1: non la riscrive, non ne cambia l'architettura e non aggiunge tabelle.
+**Stato: approvata dal titolare il 27/09/2026, con tutte le Owner Decision risolte (§9).** È la specifica operativa della Issue #2 «KITE Admissions v1.1 — Interview Workflow». È un upgrade *mirato* della V1: non la riscrive, non ne cambia l'architettura e non aggiunge tabelle.
 
 Storia del documento: bozza 0.1 → revisione interna indipendente (§12) → bozza 0.2 → decisioni del titolare → versione 1.0, dopo il consistency check finale (§13).
 

@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
-from .. import AUTHOR
+from .. import AUTHOR, catalog
 from ..db import Database
 from ..schema import PERIODICITIES
 from .common import AlreadySavedError, NotFoundError, StaleWriteError, ValidationError, clean, stamp
@@ -77,6 +77,49 @@ def parse_services(form: Mapping[str, Any]) -> list[dict[str, Any]]:
             "included": form.get(f"service_included_{index}", "1") == "1",
         })
     return services
+
+
+def clean_reductions(items: list[Mapping[str, Any]] | None, previous: list[Mapping[str, Any]] | None = None
+                     ) -> list[dict[str, Any]]:
+    """Condizione riservata: righe di riduzione sulla retta, con motivo del catalogo (OD-3a).
+
+    Nessuna riduzione è calcolata o proposta dal sistema: si registra ciò che è stato deciso.
+    """
+    legacy = {item.get("reason") for item in previous or [] if isinstance(item, Mapping)}
+    rows = []
+    for index, item in enumerate(items or [], start=1):
+        reason = str(item.get("reason") or "").strip()
+        amount = item.get("amount_cents")
+        note = clean(item.get("note"), 200) if item.get("note") is not None else None
+        if not reason and amount is None and not note:
+            continue
+        if not reason:
+            raise ValidationError(f"Riduzione {index}: scegli il motivo.", f"reduction_reason_{index}")
+        catalog.clean_code(reason, catalog.REDUCTION_REASONS, field=f"reduction_reason_{index}",
+                           what=f"Riduzione {index}", previous=reason if reason in legacy else None)
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
+            raise ValidationError(f"Riduzione {index}: indica un importo maggiore di zero.", f"reduction_amount_{index}")
+        if reason == "ALTRO" and not note:
+            raise ValidationError(f"Riduzione {index}: per «{catalog.label(catalog.REDUCTION_REASONS, reason)}» "
+                                  "descrivi la condizione nella nota.", f"reduction_note_{index}")
+        rows.append({"reason": reason, "amount_cents": amount, "note": note or ""})
+    if len(rows) > catalog.MAX_REDUCTIONS:
+        raise ValidationError(f"Al massimo {catalog.MAX_REDUCTIONS} riduzioni per proposta.")
+    return rows
+
+
+def reductions_of(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    try:
+        value = json.loads(row["reductions"] or "[]")
+    except (ValueError, KeyError, IndexError):
+        return []
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def needs_authorization(reductions: list[Mapping[str, Any]]) -> bool:
+    """Almeno un motivo discrezionale (promozione, accordo Direzione, altro): serve «Autorizzata da» (OD-3c)."""
+    return any((entry := catalog.find(catalog.REDUCTION_REASONS, item.get("reason"))) is None
+               or entry.needs_authorization for item in reductions)
 
 
 def parse_offer(form: Mapping[str, Any]) -> dict[str, Any]:

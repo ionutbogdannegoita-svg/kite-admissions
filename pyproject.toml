@@ -1,6 +1,6 @@
 [project]
 name = "kite-admissions"
-version = "1.0.0"
+version = "1.1.0"
 description = "CRM locale per le ammissioni della Latina International School"
 requires-python = ">=3.11"
 

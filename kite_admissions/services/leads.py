@@ -5,12 +5,13 @@ Ogni variazione di stato inserisce una sola Interaction nella stessa transazione
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Mapping
 
-from .. import AUTHOR
+from .. import AUTHOR, catalog
 from ..db import Database, fold
 from ..timeutil import format_date, rome_today
 from .common import (
@@ -34,6 +35,48 @@ GRADE_SUGGESTIONS = (
     "Secondaria I grado 1ª", "Secondaria I grado 2ª", "Secondaria I grado 3ª",
     "Secondaria II grado",
 )
+
+
+def clean_languages(items: list[Mapping[str, Any]] | None, previous: list[Mapping[str, Any]] | None = None
+                    ) -> list[dict[str, str]]:
+    """Lingue dichiarate dalla famiglia (non valutazioni): IT, EN, FR e fino a due altre lingue.
+
+    Ogni voce ha un livello del catalogo; i livelli già salvati e poi tolti dal catalogo restano ammessi.
+    """
+    legacy_levels = {item.get("level") for item in previous or [] if isinstance(item, Mapping)}
+    main = catalog.codes(catalog.LANGUAGES)
+    by_code: dict[str, dict[str, str]] = {}
+    others: list[dict[str, str]] = []
+    for item in items or []:
+        code = str(item.get("code") or "").strip()
+        name = clean(item.get("name"), 40) if code == catalog.OTHER_LANGUAGE else None
+        level = str(item.get("level") or "").strip()
+        if code not in main and code != catalog.OTHER_LANGUAGE:
+            raise ValidationError("Lingua non valida: ricarica la pagina.", "languages")
+        if not level and not name:
+            continue
+        what = name or catalog.label(catalog.LANGUAGES, code)
+        if not level:
+            raise ValidationError(f"Lingua «{what}»: indica il livello dichiarato.", "languages")
+        catalog.clean_code(level, catalog.LANGUAGE_LEVELS, field="languages", what=f"Livello di «{what}»",
+                           previous=level if level in legacy_levels else None)
+        if code == catalog.OTHER_LANGUAGE:
+            if not name:
+                raise ValidationError("Altra lingua: scrivi quale.", "languages")
+            others.append({"code": code, "name": name, "level": level})
+        else:
+            by_code[code] = {"code": code, "level": level}
+    if len(others) > catalog.MAX_OTHER_LANGUAGES:
+        raise ValidationError(f"Al massimo {catalog.MAX_OTHER_LANGUAGES} altre lingue.", "languages")
+    return [by_code[code] for code in main if code in by_code] + others
+
+
+def languages_of(row: Mapping[str, Any]) -> list[dict[str, str]]:
+    try:
+        value = json.loads(row["languages"] or "[]")
+    except (ValueError, KeyError, IndexError):
+        return []
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
 class SimilarLeadWarning(Exception):
