@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
+from .. import catalog
 from ..gcal.source import SourceError
 from ..schema import FOLLOWUP_ACTIONS
 from ..services import appointments as appointment_service
@@ -183,8 +184,8 @@ def _render_create_family(appointment, form, *, errors=None, duplicates=None, co
     return render_template(
         "appointments/create_family.html", active="appointments", a=appointment, form=form, errors=errors or [],
         duplicates=duplicates or [], contacts=appointment_service.contacts(appointment),
-        years=lead_service.school_year_options(rome_today(state().now())), grades=lead_service.GRADE_SUGGESTIONS,
-        sources=family_service.CONTACT_SOURCES,
+        years=lead_service.school_year_options(rome_today(state().now())), grades=catalog.GRADE_SUGGESTIONS,
+        sources=catalog.CONTACT_SOURCES,
     ), code
 
 

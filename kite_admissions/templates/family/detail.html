@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import csrf, lead_badge %}
 {% from "_appt.html" import when, status_badges %}
+{% from "appointments/_interview_lead_fields.html" import age_line %}
 {% block title %}{{ family.display_name }}{% endblock %}
 {% block content %}
   <div class="page-head">
@@ -10,7 +11,7 @@
       </h1>
       <div class="sub">
         {{ [family.primary_adult_name,
-            ('fonte: ' ~ family.contact_source) if family.contact_source,
+            ('fonte: ' ~ family.contact_source ~ ((' (' ~ family.contact_source_detail ~ ')') if family.contact_source_detail else '')) if family.contact_source,
             ('primo contatto ' ~ family.first_contact_on|d) if family.first_contact_on]|select|join(' · ') }}
       </div>
     </div>
@@ -42,8 +43,13 @@
                 <tr>
                   <td>
                     <strong>{{ lead.display_name }}</strong>
-                    {% if lead.origin %}<div class="item-meta">Provenienza: {{ lead.origin }}</div>{% endif %}
-                    {% if lead.birth_year %}<div class="item-meta">Nato/a nel {{ lead.birth_year }}</div>{% endif %}
+                    {% if lead.educational_review %}<span class="badge badge-review" title="{{ lead.educational_review_note or '' }}">Approfondimento</span>{% endif %}
+                    {% if lead.birth_date %}<div class="item-meta">Nato/a il {{ lead.birth_date|d }} · {{ age_line(ages[lead.id]) }}</div>
+                    {% elif lead.birth_year %}<div class="item-meta">Nato/a nel {{ lead.birth_year }} · {{ age_line(ages[lead.id]) }}</div>{% endif %}
+                    {% if lead.current_school or lead.current_grade %}<div class="item-meta">Ora: {{ [lead.current_school, lead.current_grade]|select|join(' · ') }}</div>{% endif %}
+                    {% if lead.origin %}<div class="item-meta">Città o zona: {{ lead.origin }}</div>{% endif %}
+                    {% if lead|languages %}<div class="item-meta">Lingue (dichiarate): {{ lead|languages }}</div>{% endif %}
+                    {% if lead.educational_review and lead.educational_review_note %}<div class="item-meta">Approfondimento: {{ lead.educational_review_note }}</div>{% endif %}
                     {% if lead.notes %}<div class="item-meta pre">{{ lead.notes }}</div>{% endif %}
                   </td>
                   <td>{{ lead.school_year or 'anno non indicato' }}{% if lead.grade %}<div class="item-meta">{{ lead.grade }}</div>{% endif %}</td>

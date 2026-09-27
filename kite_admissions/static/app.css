@@ -252,3 +252,10 @@ ol.steps li { margin-bottom: 0.7rem; }
 .item-list-row { display: flex; gap: 0.6rem; align-items: center; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--line); }
 
 body.closed { padding-top: 4rem; }
+
+/* v1.1 — dati dell'alunno: verifica dell'età solo informativa, approfondimento neutro */
+.badge-review { background: #efe9fb; color: #5b3f99; }
+.badge-age-regolare, .badge-age-anticipo, .badge-age-da_verificare { font-weight: 500; white-space: normal; }
+.badge-age-regolare { background: var(--ok-soft); color: var(--ok); }
+.badge-age-anticipo { background: var(--accent-soft); color: var(--accent); }
+.badge-age-da_verificare { background: var(--warn-soft); color: var(--warn); }

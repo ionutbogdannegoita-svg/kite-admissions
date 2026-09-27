@@ -36,9 +36,11 @@
           <input type="tel" id="primary_phone" name="primary_phone" value="{{ form.primary_phone or '' }}" maxlength="60"></div>
         <div class="field"><label for="primary_email">Email</label>
           <input type="email" id="primary_email" name="primary_email" value="{{ form.primary_email or '' }}" maxlength="200"></div>
-        <div class="field"><label for="contact_source">Fonte del contatto</label>
-          <input type="text" id="contact_source" name="contact_source" value="{{ form.contact_source or '' }}" list="sources" maxlength="120">
-          <datalist id="sources">{% for source in sources %}<option value="{{ source }}">{% endfor %}</datalist></div>
+        <div class="field"><label for="contact_source">Come ci hanno conosciuto</label>
+          <select id="contact_source" name="contact_source">
+            <option value="">Non indicato</option>
+            {% for source in sources %}<option value="{{ source }}" {{ 'selected' if form.contact_source == source }}>{{ source }}</option>{% endfor %}
+          </select></div>
       </div>
       <fieldset class="spaced">
         <legend>Bambino (facoltativo, completabile prima della visita)</legend>

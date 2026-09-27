@@ -25,16 +25,19 @@ from .common import (
 )
 from .families import parse_date_field
 
-LEAD_FIELDS = ("display_name", "school_year", "grade", "origin", "birth_year", "notes")
+# Dati dell'alunno utili all'ammissione (v1.1): si correggono qui, mai copiati nel colloquio.
+FACT_FIELDS = (
+    "display_name", "school_year", "grade", "origin", "birth_year", "birth_date", "current_school",
+    "current_grade", "languages", "bilingual_context", "profile_note", "educational_review",
+    "educational_review_note",
+)
+LEAD_FIELDS = FACT_FIELDS + ("notes",)
 STATUSES = ("IN_CORSO", "IN_PAUSA", "ISCRITTO", "NON_PROSEGUE")
 OPEN_STATUSES = ("IN_CORSO", "IN_PAUSA")
 CLOSED_STATUSES = ("ISCRITTO", "NON_PROSEGUE")
-GRADE_SUGGESTIONS = (
-    "Nido", "Infanzia",
-    "Primaria 1ª", "Primaria 2ª", "Primaria 3ª", "Primaria 4ª", "Primaria 5ª",
-    "Secondaria I grado 1ª", "Secondaria I grado 2ª", "Secondaria I grado 3ª",
-    "Secondaria II grado",
-)
+PROFILE_LIMIT = 500
+EDUCATIONAL_NOTE_LIMIT = 300
+_DEFAULTS = {"languages": "[]", "educational_review": 0}
 
 
 def clean_languages(items: list[Mapping[str, Any]] | None, previous: list[Mapping[str, Any]] | None = None
@@ -79,6 +82,106 @@ def languages_of(row: Mapping[str, Any]) -> list[dict[str, str]]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
+def languages_summary(row: Mapping[str, Any]) -> str:
+    """«IT madrelingua/bilingue · EN base»: livelli dichiarati, per schede e riepiloghi."""
+    parts = []
+    for item in languages_of(row):
+        name = item.get("name") if item.get("code") == catalog.OTHER_LANGUAGE else item.get("code")
+        level = catalog.label(catalog.LANGUAGE_LEVELS, item.get("level")).replace(" (dichiarato)", "")
+        parts.append(f"{name} {level[:1].lower() + level[1:]}")
+    return " · ".join(parts)
+
+
+def _anniversary(birth: date, year: int) -> date:
+    """Compleanno in un anno dato; chi è nato il 29 febbraio lo compie il 1° marzo negli anni non bisestili."""
+    try:
+        return birth.replace(year=year)
+    except ValueError:
+        return date(year, 3, 1)
+
+
+def age_on(birth: date, day: date) -> int:
+    return day.year - birth.year - (1 if day < _anniversary(birth, day.year) else 0)
+
+
+@dataclass
+class AgeInfo:
+    """Età calcolata e verifica anagrafica: informazioni, mai un blocco della pratica (OD-2)."""
+
+    birth_date: date | None
+    approximate: bool
+    age_today: int
+    age_at_deadline: int | None = None
+    deadline: date | None = None
+    status: str | None = None  # REGOLARE | ANTICIPO | DA_VERIFICARE
+    message: str = ""
+
+
+def age_info(lead: Mapping[str, Any], today: date) -> AgeInfo | None:
+    """Età oggi e anni compiuti al 31/12 dell'anno di inizio, con la verifica per Infanzia e Primaria 1ª."""
+    if lead["birth_date"]:
+        birth = date.fromisoformat(lead["birth_date"])
+    elif lead["birth_year"]:
+        return AgeInfo(None, True, today.year - int(lead["birth_year"]))
+    else:
+        return None
+    info = AgeInfo(birth, False, age_on(birth, today))
+    start_year = catalog.school_start_year(lead["school_year"])
+    if start_year is None:
+        return info
+    cycle = catalog.grade_cycle(lead["grade"])
+    rule = catalog.AGE_RULES.get(cycle or "")
+    info.deadline = date(start_year, 12, 31)
+    info.age_at_deadline = age_on(birth, info.deadline)
+    if rule is None:
+        return info
+    deadline, early = catalog.rule_dates(rule, start_year)
+    turns = _anniversary(birth, birth.year + rule.years)
+    what = "l'Infanzia" if cycle == "INFANZIA" else "la Primaria 1ª"
+    too_old = rule.years + (3 if cycle == "INFANZIA" else 1)
+    if info.age_at_deadline >= too_old:
+        info.status = "DA_VERIFICARE"
+        info.message = f"al {deadline:%d/%m/%Y} avrà {info.age_at_deadline} anni: età da verificare per {what}"
+    elif turns <= deadline:
+        info.status = "REGOLARE"
+        info.message = f"età regolare per {what}: {rule.years} anni entro il {deadline:%d/%m/%Y}"
+    elif turns <= early:
+        info.status = "ANTICIPO"
+        info.message = (f"anticipo: compie {rule.years} anni il {turns:%d/%m/%Y}, entro il {early:%d/%m/%Y}; "
+                        "ammissione secondo circolare e disponibilità")
+    else:
+        info.status = "DA_VERIFICARE"
+        info.message = f"compie {rule.years} anni il {turns:%d/%m/%Y}, dopo il {early:%d/%m/%Y}: età da verificare"
+    return info
+
+
+def _parse_languages(form: Mapping[str, Any], prefix: str, previous: Mapping[str, Any] | None) -> str:
+    items: list[dict[str, Any]] = [{"code": code, "level": form.get(f"{prefix}lang_{code}") or ""}
+                                   for code in catalog.codes(catalog.LANGUAGES)]
+    for index in range(1, catalog.MAX_OTHER_LANGUAGES + 1):
+        items.append({"code": catalog.OTHER_LANGUAGE, "name": form.get(f"{prefix}other_lang_{index}_name"),
+                      "level": form.get(f"{prefix}other_lang_{index}_level") or ""})
+    cleaned = clean_languages(items, languages_of(previous) if previous is not None else None)
+    return json.dumps(cleaned, ensure_ascii=False)
+
+
+def form_from_lead(lead: Mapping[str, Any]) -> dict[str, Any]:
+    """Valori per i campi del modulo (anche con prefisso nel colloquio)."""
+    form: dict[str, Any] = {name: lead[name] for name in LEAD_FIELDS if name not in ("languages",)}
+    form["revision"] = lead["revision"] if "revision" in lead.keys() else None
+    others = 0
+    for item in languages_of(lead):
+        if item.get("code") == catalog.OTHER_LANGUAGE and others < catalog.MAX_OTHER_LANGUAGES:
+            others += 1
+            form[f"other_lang_{others}_name"] = item.get("name")
+            form[f"other_lang_{others}_level"] = item.get("level")
+        elif item.get("code") != catalog.OTHER_LANGUAGE:
+            form[f"lang_{item.get('code')}"] = item.get("level")
+    form["bilingual_context"] = "" if lead["bilingual_context"] is None else str(lead["bilingual_context"])
+    form["educational_review"] = "1" if lead["educational_review"] else ""
+    return form
+
+
 class SimilarLeadWarning(Exception):
     """Richiesta simile già presente nella stessa famiglia e nello stesso anno."""
 
@@ -97,7 +200,20 @@ def school_year_options(today: date) -> list[str]:
     return [f"{year}/{year + 1}" for year in range(start - 1, start + 4)]
 
 
-def parse_lead(form: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
+def _field_text(form: Mapping[str, Any], name: str, limit: int, what: str) -> str | None:
+    try:
+        return clean(form.get(name), limit)
+    except ValidationError:
+        raise ValidationError(f"{what}: testo troppo lungo (massimo {limit} caratteri).", name) from None
+
+
+def parse_lead(form: Mapping[str, Any], prefix: str = "", *, previous: Mapping[str, Any] | None = None,
+               today: date | None = None, with_notes: bool = True) -> dict[str, Any]:
+    """Dati della richiesta dal modulo. Campi v1.1 facoltativi: assenti nei moduli brevi della V1.
+
+    `previous` (riga attuale) conserva i livelli linguistici non più in catalogo; `with_notes=False`
+    (colloquio) lascia fuori le note della richiesta, che si modificano dal loro modulo.
+    """
     name = clean(form.get(prefix + "display_name"), 200)
     if name is None:
         raise ValidationError("Il nome o un riferimento provvisorio del bambino è obbligatorio.",
@@ -110,20 +226,43 @@ def parse_lead(form: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
             raise ValidationError("Anno scolastico nel formato 2026/2027.", prefix + "school_year") from None
         if second != first + 1:
             raise ValidationError("Anno scolastico nel formato 2026/2027.", prefix + "school_year")
+    birth_date = parse_date_field(form, prefix + "birth_date", "Data di nascita")
+    if birth_date is not None:
+        born = date.fromisoformat(birth_date)
+        if not 1990 <= born.year <= 2100 or (today is not None and born > today):
+            raise ValidationError("Data di nascita non valida.", prefix + "birth_date")
     birth_raw = clean(form.get(prefix + "birth_year"), 4)
     birth_year = None
-    if birth_raw is not None:
+    if birth_date is not None:
+        birth_year = int(birth_date[:4])  # l'anno segue sempre la data completa
+    elif birth_raw is not None:
         if not birth_raw.isdigit() or not 1990 <= int(birth_raw) <= 2100:
             raise ValidationError("Anno di nascita non valido.", prefix + "birth_year")
         birth_year = int(birth_raw)
-    return {
+    bilingual_raw = form.get(prefix + "bilingual_context") or ""
+    if bilingual_raw not in ("", "0", "1"):
+        raise ValidationError("Contesti bilingui: valore non valido.", prefix + "bilingual_context")
+    educational = 1 if form.get(prefix + "educational_review") == "1" else 0
+    values = {
         "display_name": name,
         "school_year": school_year,
         "grade": clean(form.get(prefix + "grade"), 80),
         "origin": clean(form.get(prefix + "origin"), 200),
         "birth_year": birth_year,
-        "notes": clean(form.get(prefix + "notes"), 4000),
+        "birth_date": birth_date,
+        "current_school": _field_text(form, prefix + "current_school", 200, "Scuola attuale"),
+        "current_grade": _field_text(form, prefix + "current_grade", 80, "Classe attuale"),
+        "languages": _parse_languages(form, prefix, previous),
+        "bilingual_context": int(bilingual_raw) if bilingual_raw else None,
+        "profile_note": _field_text(form, prefix + "profile_note", PROFILE_LIMIT, "Profilo scolastico"),
+        "educational_review": educational,
+        # Senza il flag la nota non ha senso: si svuota (lo impone anche il database).
+        "educational_review_note": _field_text(form, prefix + "educational_review_note", EDUCATIONAL_NOTE_LIMIT,
+                                               "Nota di approfondimento") if educational else None,
     }
+    if with_notes:
+        values["notes"] = clean(form.get(prefix + "notes"), 4000)
+    return values
 
 
 def get_lead(db: Database, lead_id: str, family_id: str | None = None) -> sqlite3.Row:
@@ -157,8 +296,9 @@ def insert_lead(db: Database, family_id: str, values: Mapping[str, Any], *, now:
                 lead_id: str | None = None) -> str:
     lead_id = lead_id or new_id()
     columns = ["id", "family_id", *LEAD_FIELDS, "status", "created_at", "updated_at", "created_by", "updated_by"]
-    params = [lead_id, family_id, *(values.get(name) for name in LEAD_FIELDS), "IN_CORSO",
-              stamp(now), stamp(now), AUTHOR, AUTHOR]
+    params = [lead_id, family_id,
+              *(values.get(name) if values.get(name) is not None else _DEFAULTS.get(name) for name in LEAD_FIELDS),
+              "IN_CORSO", stamp(now), stamp(now), AUTHOR, AUTHOR]
     db.execute(f"INSERT INTO StudentLead ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})", params)
     return lead_id
 
@@ -176,6 +316,31 @@ def create_lead(db: Database, family_id: str, values: Mapping[str, Any], *, now:
                 raise SimilarLeadWarning(similar)
         insert_lead(db, family_id, values, now=now, lead_id=lead_id)
     return lead_id
+
+
+def update_facts(db: Database, lead_id: str, family_id: str, values: Mapping[str, Any], *, revision: int,
+                 now: datetime) -> int:
+    """Dati dell'alunno aggiornati dal colloquio: solo FACT_FIELDS, nessuna Interaction.
+
+    A differenza di `update_lead` non tocca note e data di riesame. Restituisce la nuova revisione,
+    così le operazioni successive nella stessa transazione possono concatenarla.
+    """
+    unknown = set(values) - set(FACT_FIELDS)
+    if unknown:
+        raise ValueError(f"campi non ammessi: {sorted(unknown)}")
+    with db.transaction():
+        current = get_lead(db, lead_id, family_id)
+        if current["revision"] != revision:
+            raise StaleWriteError()
+        assignments = ", ".join(f"{column} = ?" for column in values)
+        cursor = db.execute(
+            f"UPDATE StudentLead SET {assignments}, updated_at = ?, updated_by = ?, revision = revision + 1 "
+            "WHERE id = ? AND revision = ?",
+            list(values.values()) + [stamp(now), AUTHOR, lead_id, revision],
+        )
+        if cursor.rowcount != 1:
+            raise StaleWriteError()
+    return revision + 1
 
 
 def update_lead(db: Database, lead_id: str, family_id: str, values: Mapping[str, Any], *, revision: int,
@@ -311,16 +476,17 @@ def change_status(db: Database, lead_id: str, family_id: str, change: StatusChan
 
 
 def copy_for_new_year(lead: Mapping[str, Any]) -> dict[str, Any]:
-    """Dati essenziali per una nuova richiesta in un altro anno: la pratica conclusa non si sovrascrive."""
+    """Valori del modulo per una nuova richiesta in un altro anno: la pratica conclusa non si sovrascrive.
+
+    Si copiano i dati stabili (nome, zona, data di nascita, lingue); scuola e classe attuali, profilo e
+    flag di approfondimento si rivedono con la nuova richiesta.
+    """
     next_year = None
     if lead["school_year"]:
         first = int(lead["school_year"][:4]) + 1
         next_year = f"{first}/{first + 1}"
-    return {
-        "display_name": lead["display_name"],
-        "school_year": next_year,
-        "grade": None,
-        "origin": lead["origin"],
-        "birth_year": lead["birth_year"],
-        "notes": None,
-    }
+    form = form_from_lead(lead)
+    for name in ("grade", "notes", "current_school", "current_grade", "profile_note", "educational_review_note"):
+        form[name] = None
+    form.update({"school_year": next_year, "educational_review": "", "revision": None})
+    return form
