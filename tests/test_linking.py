@@ -10,6 +10,7 @@ import pytest
 from kite_admissions.db import Database
 from kite_admissions.gcal.fake import FakeCalendarSource
 from kite_admissions.services import appointments as appointment_service
+from kite_admissions.textutil import find_phones
 
 from .calendar_data import CAL, timed
 from .helpers import create_family, create_lead, interactions, location_id
@@ -122,6 +123,23 @@ def test_create_family_from_event_uses_editable_suggestions(app, client, fake, d
     assert family["display_name"] == "Famiglia Esempio Conti" and family["primary_email"] is None
     assert (row["family_id"], row["student_lead_id"]) == (new_id, lead["id"])
     assert row["src_title"] == "Visita: Famiglia Esempio Conti"  # dati Calendar separati e invariati
+
+
+def test_dates_and_school_years_are_never_proposed_as_phones(app, client, fake, db):
+    """Date e anni scolastici dell'evento non diventano recapiti né precompilano il telefono (SPEC §4.3, §5)."""
+    for text in ("a.s. 2026/2027", "anni 2019-2021", "nato il 12/03/2019", "del 25.09.2026",
+                 "visita il 25/09/2026 10:30", "data 2026-09-25 10:30"):
+        assert find_phones(text) == [], text
+    for text, normalized in (("0773/000123", "+390773000123"), ("0773.000.321", "+390773000321"),
+                             ("nato il 12/03/2019 0773 000 322", "+390773000322")):
+        assert [value for _, value in find_phones(text)] == [normalized], text
+    ids = import_events(app, client, fake, timed(
+        "evt-1", "2026-10-05T09:30:00+02:00", title="Visita Famiglia Esempio Date - a.s. 2027/2028",
+        description="Bambino nato il 12/03/2021. Richiamare dopo il 25/09/2026 10:30 allo 0773 000 311"))
+    contacts = appointment_service.contacts(appointment(db, ids["evt-1"]))
+    assert [(c["type"], c["normalized"]) for c in contacts] == [("phone", "+390773000311")]
+    page = client.get(f"/appuntamenti/{ids['evt-1']}/nuova-famiglia").get_data(as_text=True)
+    assert 'id="primary_phone" name="primary_phone" value="0773 000 311"' in page
 
 
 def test_create_family_from_event_allows_missing_data_and_warns_duplicates(app, client, fake, db):

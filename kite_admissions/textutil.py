@@ -12,6 +12,13 @@ _EMAIL_RE = re.compile(r"^[^@\s<>\"',;]+@[^@\s<>\"',;]+\.[^@\s<>\"',;]{2,}$")
 _EMAIL_IN_TEXT = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 # Numeri di telefono nel testo: prefisso internazionale opzionale e gruppi di cifre.
 _PHONE_IN_TEXT = re.compile(r"(?<![\w+])(?:\+|00)?\d[\d .\-/()]{6,18}\d(?!\w)")
+# Date (25/09/2026, 25.09.26, 2026-09-25), anni scolastici e intervalli di anni (2026/2027, 2019-2021):
+# mai proposti come telefoni.
+_DATE_IN_TEXT = re.compile(
+    r"(?<![\d./-])(?:(?P<d>\d{1,2})(?P<s1>[./-])(?P<m>\d{1,2})(?P=s1)(?:\d{4}|\d{2})"
+    r"|(?:19|20)\d{2}(?P<s2>[./-])(?P<im>\d{1,2})(?P=s2)(?P<id>\d{1,2})"
+    r"|(?P<y1>(?:19|20)\d{2}) ?[/-] ?(?P<y2>(?:19|20)\d{2}))(?![\d./-]*\d)"
+)
 _LABEL_NOISE = re.compile(r"\b(famiglia|fam|family)\b\.?", re.IGNORECASE)
 
 
@@ -127,11 +134,23 @@ def html_to_text(value: str | None) -> str:
     return "\n".join(cleaned).strip()
 
 
+def _is_date(match: re.Match) -> bool:
+    if match.group("y1"):
+        return int(match.group("y1")) < int(match.group("y2"))
+    day, month = (match.group("d"), match.group("m")) if match.group("d") else (match.group("id"), match.group("im"))
+    return 1 <= int(day) <= 31 and 1 <= int(month) <= 12
+
+
+def _mask_dates(text: str) -> str:
+    """Separa date e anni scolastici dal resto del testo: non diventano né spezzano telefoni."""
+    return _DATE_IN_TEXT.sub(lambda match: " | " if _is_date(match) else match.group(0), text)
+
+
 def find_phones(text: str | None) -> list[tuple[str, str]]:
     """Coppie (come scritto, normalizzato) trovate nel testo, senza duplicati."""
     found: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for match in _PHONE_IN_TEXT.finditer(text or ""):
+    for match in _PHONE_IN_TEXT.finditer(_mask_dates(text or "")):
         raw = match.group(0).strip()
         digits = phone_digits(raw)
         if len(digits) < 8 or re.fullmatch(r"(19|20)\d{2}[01]\d[0-3]\d", digits):
