@@ -31,6 +31,15 @@ def catalog_labels(codes: list[str] | None, list_name: str) -> list[str]:
     return [catalog.label(entries, code) for code in codes or []]
 
 
+def rome_day(value: str | None) -> str:
+    """{{ value|rd }}: giorno di Roma di un timestamp UTC salvato, oppure una data semplice."""
+    if not value:
+        return ""
+    if len(value) > 10:
+        return timeutil.format_date(timeutil.rome_date_of(value))
+    return timeutil.format_date(value)
+
+
 def register(app: Flask) -> None:
     app.jinja_env.filters.update(
         rfc_dt=rfc_datetime,
@@ -46,4 +55,5 @@ def register(app: Flask) -> None:
         cat=catalog_label,
         cats=catalog_labels,
         languages=lead_service.languages_summary,
+        rd=rome_day,
     )

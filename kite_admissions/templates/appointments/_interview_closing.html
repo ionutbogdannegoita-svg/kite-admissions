@@ -1,0 +1,135 @@
+{# K. Conclusione e prossimo passo: diventa operativa solo con «Concludi colloquio»; «Salva» ne conserva la bozza. #}
+{% from "appointments/_interview_macros.html" import chips, guide, section %}
+{% set state = page.states[10] %}
+{% call section(state, open_section, actions=false) %}
+  {% if page.phase == 'open' %}
+    {{ guide(["Allora ci sentiamo… / vi mandiamo… entro…: va bene?"]) }}
+    <p class="small">Si concorda con la famiglia prima che vada via. Tutto ciò che è qui diventa operativo solo con <strong>«Concludi colloquio»</strong>; «Salva» ne conserva la bozza.</p>
+    {% if a.visit_outcome %}<div class="flash flash-info small">Esito già registrato: {{ a.visit_outcome|label }}{% if a.visited_at %} il {{ a.visited_at|dt }}{% endif %}. Per cambiarlo scegli l'esito e premi «Concludi colloquio».</div>{% endif %}
+    <fieldset>
+      <legend>Esito dell'incontro</legend>
+      <div class="chips">
+        {% for value in outcomes %}<label class="chip"><input type="radio" name="outcome" value="{{ value }}" {{ 'checked' if form.get('outcome') == value }}> <span>{{ value|label }}</span></label>{% endfor %}
+      </div>
+      <div class="field"><label for="visited_at">Data e ora effettive</label>
+        <input type="datetime-local" id="visited_at" name="visited_at" value="{{ form.get('visited_at', '') }}">
+        <span class="hint">Proposta dall'evento: il calendario da solo non attesta che la famiglia sia venuta.</span></div>
+    </fieldset>
+
+    <div class="field"><span class="label">Scelta rapida (precompila il prossimo passo, non salva nulla)</span>
+      <div class="quick">
+        {% for quick in page.quick %}
+          <button type="button" class="btn btn-quiet btn-small" data-quick data-action="{{ quick.action }}" data-due="{{ quick.due }}" data-note="{{ quick.note }}"{% if quick.by_timing %} data-due-by-timing="{{ quick.by_timing }}"{% endif %}{% if quick.close %} data-close-leads="1"{% endif %}>{{ quick.label }}</button>
+        {% endfor %}
+      </div></div>
+
+    {% for slot in [1, 2] %}
+      {% set p = 'step' ~ slot ~ '_' %}
+      <fieldset class="iv-step">
+        <legend>{{ 'Prossimo passo' if slot == 1 else 'Altro passo (facoltativo)' }}</legend>
+        <div class="form-grid">
+          <div class="field"><label for="{{ p }}action">Azione</label>
+            <select id="{{ p }}action" name="{{ p }}action">
+              <option value="">—</option>
+              {% for value in followup_actions %}<option value="{{ value }}" {{ 'selected' if form.get(p ~ 'action') == value }}>{{ value|label }}</option>{% endfor %}
+              <option value="{{ catalog.WAIT_ACTION }}" {{ 'selected' if form.get(p ~ 'action') == catalog.WAIT_ACTION }}>{{ catalog.WAIT_NOTE }}</option>
+            </select></div>
+          <div class="field"><label for="{{ p }}due_on">Entro il (o riesame il)</label>
+            <input type="date" id="{{ p }}due_on" name="{{ p }}due_on" value="{{ form.get(p ~ 'due_on', '') }}"></div>
+          <div class="field"><label for="{{ p }}assignee">Responsabile</label>
+            <input type="text" id="{{ p }}assignee" name="{{ p }}assignee" value="{{ form.get(p ~ 'assignee', '') }}" list="assignees" maxlength="120"></div>
+          <div class="field"><label for="{{ p }}lead">Riguarda</label>
+            <select id="{{ p }}lead" name="{{ p }}lead">
+              <option value="">Tutta la famiglia</option>
+              {% for lead in ctx.leads %}<option value="{{ lead.id }}" {{ 'selected' if form.get(p ~ 'lead') == lead.id }}>{{ lead.display_name }}{% if lead.status not in ['IN_CORSO', 'IN_PAUSA'] %} ({{ lead.status|label }}){% endif %}</option>{% endfor %}
+            </select></div>
+          <div class="field wide"><label for="{{ p }}note">Nota</label>
+            <input type="text" id="{{ p }}note" name="{{ p }}note" value="{{ form.get(p ~ 'note', '') }}" maxlength="2000" placeholder="obbligatoria per «Altro»"></div>
+        </div>
+      </fieldset>
+    {% endfor %}
+    <datalist id="assignees">{% for name in catalog.ASSIGNEE_SUGGESTIONS %}<option value="{{ name }}">{% endfor %}</datalist>
+    <p class="hint">«Attendere risposta della famiglia» vale come prossimo passo quando la famiglia valuta e KITE non deve fare nulla fino alla data di riesame. Il responsabile è solo un'etichetta.</p>
+
+    <div class="field"><span class="label">Materiale da inviare</span>
+      {{ chips('materials', catalog.MATERIALS, form.getlist('materials'), 'MATERIALS') }}
+      <input type="text" name="materials_other" value="{{ form.get('materials_other', '') }}" maxlength="200" placeholder="se «Altro», quale materiale" aria-label="Altro materiale">
+      <span class="hint">Finisce come «Materiale: …» nella nota del passo «Inviare informazioni».</span></div>
+
+    {% set to_verify = [] %}
+    {% for index in range(1, catalog.MAX_QUESTIONS + 1) %}{% if form.get('verify_' ~ index) == '1' and form.get('q_' ~ index) %}{% set _ = to_verify.append(form.get('q_' ~ index)) %}{% endif %}{% endfor %}
+    <fieldset>
+      <legend>Verifiche</legend>
+      {% if to_verify %}<p class="small">{{ to_verify|length }} da verificare: {% for question in to_verify %}«{{ question }}»{% if not loop.last %}; {% endif %}{% endfor %}</p>
+      {% else %}<p class="small muted">Nessuna domanda segnata «da verificare» nella sezione H.</p>{% endif %}
+      <div class="form-grid">
+        <label class="check"><input type="checkbox" name="verify_step" value="1" {{ 'checked' if form.get('verify_step') == '1' }}> <span>Crea il passo «Verificare e rispondere»</span></label>
+        <div class="field"><label for="verify_due_on">Entro il</label>
+          <input type="date" id="verify_due_on" name="verify_due_on" value="{{ form.get('verify_due_on', '') }}"></div>
+        <div class="field"><label for="verify_assignee">Responsabile</label>
+          <input type="text" id="verify_assignee" name="verify_assignee" value="{{ form.get('verify_assignee', '') }}" list="assignees" maxlength="120"></div>
+      </div>
+    </fieldset>
+
+    {% if page.open_followups %}
+      <fieldset>
+        <legend>Follow-up aperti da prima dell'incontro</legend>
+        {% for f in page.open_followups %}
+          <label class="check"><input type="checkbox" name="complete_{{ f.id }}" value="1" {{ 'checked' if form.get('complete_' ~ f.id) == '1' }}>
+            <span>{{ step_label(f) }}{% if f.lead_name %} · {{ f.lead_name }}{% endif %} · {% if f.due_on < today_iso %}scaduto il {{ f.due_on|d }}{% else %}entro il {{ f.due_on|d }}{% endif %}{% if f.note and not f.note.startswith(wait_note) %} · {{ f.note }}{% endif %} — <em>completato con questo incontro</em></span></label>
+        {% endfor %}
+      </fieldset>
+    {% endif %}
+
+    {% set closable = [] %}
+    {% for index, lead in page.leads %}{% if lead.status in ['IN_CORSO', 'IN_PAUSA'] %}{% set _ = closable.append(lead) %}{% endif %}{% endfor %}
+    {% if closable %}
+      <fieldset>
+        <legend>Non prosegue</legend>
+        {% for lead in closable %}
+          <label class="check"><input type="checkbox" name="close_{{ lead.id }}" value="1" data-close-lead {{ 'checked' if form.get('close_' ~ lead.id) == '1' }}> <span>{{ lead.display_name }}: la famiglia non prosegue</span></label>
+          <div class="field" data-show-when="close_{{ lead.id }}=1"><label for="close_reason_{{ lead.id }}">Motivo</label>
+            <input type="text" id="close_reason_{{ lead.id }}" name="close_reason_{{ lead.id }}" value="{{ form.get('close_reason_' ~ lead.id, '') }}" maxlength="500" data-close-reason></div>
+        {% endfor %}
+      </fieldset>
+    {% endif %}
+
+    {% if page.coverage %}
+      <div class="flash flash-warning small">Copertura: nessun passo successivo all'incontro per {{ page.coverage|join(', ') }} → per concludere come «Visita svolta» serve il prossimo passo (oppure «Non prosegue»).</div>
+    {% else %}
+      <div class="flash flash-info small">Copertura: ogni richiesta dell'incontro ha già un passo successivo all'incontro, oppure è chiusa o in pausa.</div>
+    {% endif %}
+
+    <div class="field wide"><label for="visit_report">Sintesi libera (facoltativa)</label>
+      <textarea id="visit_report" name="visit_report" maxlength="8000">{{ form.get('visit_report', '') }}</textarea></div>
+    <div class="form-actions iv-actions">
+      <button type="submit" name="action" value="save:k" class="btn btn-secondary">Salva</button>
+      <button type="submit" name="action" value="conclude" class="btn">Concludi colloquio</button>
+    </div>
+  {% else %}
+    <fieldset>
+      <legend>Esito registrato (correzioni)</legend>
+      <div class="chips">
+        {% for value in outcomes %}<label class="chip"><input type="radio" name="visit_outcome" value="{{ value }}" {{ 'checked' if form.get('visit_outcome') == value }}> <span>{{ value|label }}</span></label>{% endfor %}
+        <label class="chip chip-empty"><input type="radio" name="visit_outcome" value="" {{ 'checked' if not form.get('visit_outcome') }}> <span>Non ancora registrato</span></label>
+      </div>
+      <div class="field"><label for="visited_at">Data e ora effettive</label>
+        <input type="datetime-local" id="visited_at" name="visited_at" value="{{ form.get('visited_at', '') }}"></div>
+      <p class="hint">Le correzioni si salvano con «Salva». Tornare a «Visita svolta» passa sempre da «Concludi colloquio».</p>
+    </fieldset>
+    <h3>Prossimi passi nati da questo incontro</h3>
+    {% if page.meeting_followups %}
+      <ul class="item-list">
+        {% for f in page.meeting_followups %}
+          <li><div class="item-main"><span class="title">{{ step_label(f) }}</span> entro il {{ f.due_on|d }}{% if f.assignee %} · {{ f.assignee }}{% endif %}{% if f.lead_name %} · {{ f.lead_name }}{% endif %}
+            <span class="badge badge-{{ f.status|lower }}">{{ f.status|label }}</span>
+            {% if f.note and f.note != wait_note %}<div class="item-meta">{{ f.note }}</div>{% endif %}</div></li>
+        {% endfor %}
+      </ul>
+    {% else %}<p class="empty">Nessun follow-up nato da questo incontro.</p>{% endif %}
+    <p class="small"><a href="{{ url_for('families.detail', family_id=a.family_id) }}#follow-up">Nuovi passi dalla scheda famiglia</a></p>
+    <div class="field wide"><label for="visit_report">Sintesi libera (facoltativa)</label>
+      <textarea id="visit_report" name="visit_report" maxlength="8000">{{ form.get('visit_report', '') }}</textarea></div>
+    <div class="form-actions iv-actions"><button type="submit" name="action" value="save:k" class="btn btn-secondary">Salva</button></div>
+  {% endif %}
+{% endcall %}

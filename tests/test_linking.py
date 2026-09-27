@@ -182,9 +182,9 @@ def test_change_link_moves_report_and_warns(app, client, fake, db):
     ids = import_events(app, client, fake, timed("evt-1", "2026-09-28T09:30:00+02:00"))
     appointment_id = ids["evt-1"]
     client.post(f"/appuntamenti/{appointment_id}/collega", data={"family_id": wrong, "lead_id": lead_id, "revision": 1})
-    client.post(f"/appuntamenti/{appointment_id}/resoconto", data={
+    client.post(f"/appuntamenti/{appointment_id}/resoconto", data={  # v1.1 (OD-5): con il prossimo passo
         "visit_outcome": "SVOLTA", "visited_at": "2026-09-28T09:30", "visit_report": "Resoconto di esempio",
-        "revision": 2})
+        "next_action": "RICHIAMARE", "next_due_on": "2026-10-02", "next_new_id": str(uuid.uuid4()), "revision": 2})
     page = client.get(f"/appuntamenti/{appointment_id}/cambia?famiglia={right}").get_data(as_text=True)
     assert "Famiglia Esempio Sbagliata" in page and "Famiglia Esempio Giusta" in page
     assert "anche il resoconto seguirà" in page and "non</strong> vengono trasferiti" in page
@@ -222,9 +222,9 @@ def test_calendar_updates_never_touch_family_or_local_data(app, client, fake, db
     appointment_id = ids["evt-1"]
     client.post(f"/appuntamenti/{appointment_id}/collega", data={"family_id": family_id, "revision": 1})
     client.post(f"/appuntamenti/{appointment_id}/preparazione", data={"preparation": "Portare il POF", "revision": 2})
-    client.post(f"/appuntamenti/{appointment_id}/resoconto", data={
+    client.post(f"/appuntamenti/{appointment_id}/resoconto", data={  # v1.1 (OD-5): con il prossimo passo
         "visit_outcome": "SVOLTA", "visited_at": "2026-09-30T15:00", "visit_report": "Resoconto confermato",
-        "revision": 3})
+        "next_action": "RICHIAMARE", "next_due_on": "2026-10-03", "next_new_id": str(uuid.uuid4()), "revision": 3})
     fake.put(CAL, timed("evt-1", "2026-10-02T11:00:00+02:00", title="Titolo cambiato dalla segreteria",
                         description="nuovo numero 0773 000 599"))
     clock.advance(hours=1)

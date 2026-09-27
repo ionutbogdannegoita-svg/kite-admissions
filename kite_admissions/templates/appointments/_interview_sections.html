@@ -1,0 +1,162 @@
+{# Sezioni A–J del colloquio, nell'ordine della conversazione. I dati dell'alunno sono quelli della sua richiesta. #}
+{% from "appointments/_interview_lead_fields.html" import identity_fields, language_fields, profile_fields, age_line %}
+{% from "appointments/_interview_macros.html" import chips, radios, options, guide, section %}
+{% from "family/_offer_blocks.html" import offer_blocks %}
+{% set states = page.states %}
+
+{% call section(states[0], open_section) %}
+  {{ guide(["Prima di iniziare confermo qualche dato: nome e cognome di vostro figlio, la data di nascita, per quale anno e quale classe?", "Che scuola frequenta ora, e che classe?"]) }}
+  <div class="field"><span class="label">Presenti all'incontro <span class="iv-tag iv-tag-registra">Registra</span></span>
+    {{ chips('attendees', catalog.ATTENDEE_RELATIONS, form.getlist('attendees'), 'ATTENDEE_RELATIONS') }}
+    <span class="hint">Solo la relazione con l'alunno, senza chiederla e senza nomi.</span></div>
+  {% for index, lead in page.leads %}
+    <fieldset class="spaced">
+      <legend>{{ lead.display_name }} <span class="item-meta">· {{ age_line(page.ages[lead.id]) }}</span></legend>
+      {{ identity_fields(form, 's' ~ index ~ '_', years, grades, current_grades, today_iso) }}
+      <p class="hint">Dati della richiesta: si correggono qui e restano nella scheda, non vengono copiati nel colloquio.</p>
+    </fieldset>
+  {% else %}
+    <p class="empty">Nessuna richiesta aperta per questo incontro: aggiungi il figlio.</p>
+  {% endfor %}
+  <div class="actions"><button type="submit" name="action" value="go:new_lead" class="btn btn-quiet btn-small">Salva e aggiungi un figlio</button></div>
+{% endcall %}
+
+{% call section(states[1], open_section) %}
+  {{ guide(["Come avete conosciuto KITE?"]) }}
+  <div class="form-grid">
+    <div class="field"><label for="contact_source">Fonte</label>
+      <select id="contact_source" name="contact_source">
+        <option value="">Non indicata</option>
+        {% for source in catalog.CONTACT_SOURCES %}<option value="{{ source }}" {{ 'selected' if form.get('contact_source') == source }}>{{ source }}</option>{% endfor %}
+        {% if form.get('contact_source') and form.get('contact_source') not in catalog.CONTACT_SOURCES %}<option value="{{ form.get('contact_source') }}" selected>{{ form.get('contact_source') }} (valore precedente)</option>{% endif %}
+      </select></div>
+    <div class="field"><label for="contact_source_detail">Dettaglio</label>
+      <input type="text" id="contact_source_detail" name="contact_source_detail" value="{{ form.get('contact_source_detail', '') }}" maxlength="200">
+      <span class="hint">Solo se utile, per esempio quale evento o quale famiglia vi ha segnalati, per ringraziare o per ricordarlo. Nessun altro dato della famiglia che vi ha segnalati.</span></div>
+  </div>
+{% endcall %}
+
+{% call section(states[2], open_section) %}
+  {{ guide(["Cosa vi porta a valutare una nuova scuola?", "Cosa cercate principalmente nel prossimo percorso scolastico?", "C'è qualcosa che vorreste fosse diverso rispetto all'esperienza attuale?", "Quali aspetti considerate prioritari nella scelta?"]) }}
+  {{ chips('motivations', catalog.MOTIVATIONS, form.getlist('motivations'), 'MOTIVATIONS') }}
+  <div class="field wide"><label for="motivations_note">Nota</label>
+    <textarea id="motivations_note" name="motivations_note" maxlength="600">{{ form.get('motivations_note', '') }}</textarea>
+    <span class="hint">Registra ciò che la famiglia <em>cerca</em>, con parole neutre. Niente giudizi sulla scuola attuale, sugli insegnanti o su altre persone. Meglio segnare al massimo tre priorità.</span></div>
+{% endcall %}
+
+{% call section(states[3], open_section) %}
+  {{ guide(["Come sta vivendo la scuola quest'anno?", "Quali attività o materie preferisce?", "C'è un'area in cui pensate abbia bisogno di più supporto?"]) }}
+  {% for index, lead in page.leads %}
+    <fieldset class="spaced"><legend>{{ lead.display_name }} · dichiarato dalla famiglia</legend>
+      {{ profile_fields(form, 's' ~ index ~ '_') }}</fieldset>
+  {% else %}<p class="empty">Nessun alunno in questo incontro.</p>{% endfor %}
+{% endcall %}
+
+{% call section(states[4], open_section) %}
+  {{ guide(["Quali lingue parla o sente a casa? Con che livello, indicativamente?", "Ha già frequentato contesti bilingui o internazionali?"]) }}
+  {% for index, lead in page.leads %}
+    <fieldset class="spaced"><legend>{{ lead.display_name }} · lingue dichiarate</legend>
+      {{ language_fields(form, 's' ~ index ~ '_', catalog.LANGUAGES, catalog.LANGUAGE_LEVELS, other_rows) }}</fieldset>
+  {% else %}<p class="empty">Nessun alunno in questo incontro.</p>{% endfor %}
+{% endcall %}
+
+{% call section(states[5], open_section) %}
+  {{ guide(["Che orari vi servono, in entrata e in uscita?", "Vi interessano pre-scuola, post-scuola, mensa, trasporto, corsi pomeridiani?", "Ci sono giorni o orari critici?", "Da quando vorreste iniziare?", "Ci sono fratelli o sorelle che frequentano già KITE?"]) }}
+  {% if page.siblings %}<p class="small">Fratelli e sorelle nel CRM: {% for lead in page.siblings %}{{ lead.display_name }} · {{ [lead.grade, lead.school_year]|select|join(' ') or 'anno non indicato' }} · {{ lead.status|label }}{% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+  <div class="field"><span class="label">Servizi di interesse</span>
+    {{ chips('needs_services', catalog.SERVICES_OF_INTEREST, form.getlist('needs_services'), 'SERVICES_OF_INTEREST') }}
+    <span class="hint">Allergie, intolleranze o diete non si registrano qui: si raccolgono all'iscrizione con la modulistica della mensa. Per il trasporto basta la zona (sezione A), non l'indirizzo.</span></div>
+  <div class="form-grid">
+    <div class="field"><label for="needs_activities">Attività di interesse</label>
+      <input type="text" id="needs_activities" name="needs_activities" value="{{ form.get('needs_activities', '') }}" maxlength="200"></div>
+    <div class="field"><label for="needs_schedule">Orario desiderato</label>
+      <input type="text" id="needs_schedule" name="needs_schedule" value="{{ form.get('needs_schedule', '') }}" maxlength="200" placeholder="es. ingresso 8:00, uscita 16:30"></div>
+    <div class="field"><label for="needs_desired_start">Data auspicata di ingresso</label>
+      <input type="date" id="needs_desired_start" name="needs_desired_start" value="{{ form.get('needs_desired_start', '') }}">
+      <span class="hint">Dopo il 30/09 dell'anno di inizio vale come inserimento in corso d'anno.</span></div>
+    <div class="field"><label for="needs_siblings">Fratelli o sorelle che frequentano già KITE</label>
+      <select id="needs_siblings" name="needs_siblings">
+        <option value="" {{ 'selected' if not form.get('needs_siblings') }}>Non indicato</option>
+        <option value="1" {{ 'selected' if form.get('needs_siblings') == '1' }}>Sì</option>
+        <option value="0" {{ 'selected' if form.get('needs_siblings') == '0' }}>No</option>
+      </select></div>
+    <div class="field wide"><label for="needs_constraints">Giorni o orari critici, logistica</label>
+      <textarea id="needs_constraints" name="needs_constraints" maxlength="400">{{ form.get('needs_constraints', '') }}</textarea></div>
+  </div>
+{% endcall %}
+
+{% call section(states[6], open_section) %}
+  <p class="small">La lista di ciò che conviene spiegare: le spunte non creano voci in cronologia e nel riepilogo compare ciò che non è ancora stato presentato.</p>
+  {{ chips('presented', page.topics, form.getlist('presented'), 'PRESENTATION_TOPICS') }}
+{% endcall %}
+
+{% call section(states[7], open_section) %}
+  <table class="list compact questions">
+    <thead><tr><th>Domanda della famiglia</th><th>Risposta data</th><th>Da verificare</th></tr></thead>
+    <tbody>
+      {% for index in range(1, page.question_rows + 1) %}
+        <tr>
+          <td><input type="text" name="q_{{ index }}" value="{{ form.get('q_' ~ index, '') }}" maxlength="300" aria-label="Domanda {{ index }}"></td>
+          <td><input type="text" name="a_{{ index }}" value="{{ form.get('a_' ~ index, '') }}" maxlength="500" aria-label="Risposta {{ index }}"></td>
+          <td><label class="check"><input type="checkbox" name="verify_{{ index }}" value="1" {{ 'checked' if form.get('verify_' ~ index) == '1' }}> <span class="sr-only">Da verificare {{ index }}</span></label></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">Righe brevi: domanda e risposta data. Una risposta senza domanda non si salva. Le righe «da verificare» possono diventare un passo alla conclusione (sezione K). Dopo il salvataggio compaiono altre righe vuote, fino a {{ catalog.MAX_QUESTIONS }}.</p>
+{% endcall %}
+
+{% call section(states[8], open_section) %}
+  {% for scope in page.scopes %}
+    {% set current = scope.current %}
+    {% set draft = scope.draft %}
+    <div class="iv-offer">
+      <h3>{{ scope.heading }}</h3>
+      {% if current %}
+        <p class="small">Proposta corrente <strong>v{{ current.version_no }}</strong> · comunicata il {{ current.communicated_at|dt }}{% if current.communication_channel %} · {{ current.communication_channel }}{% endif %}</p>
+        {{ offer_blocks(current) }}
+      {% elif scope.latest_sent %}
+        <p class="small"><span class="badge badge-warn">Nessuna proposta corrente</span> l'ultima comunicata (v{{ scope.latest_sent.version_no }}) è stata ritirata.</p>
+      {% endif %}
+      {% if draft %}
+        <p class="small">Bozza <strong>v{{ draft.version_no }}</strong> <span class="badge badge-bozza">Bozza</span></p>
+        {{ offer_blocks(draft) }}
+      {% endif %}
+      <div class="actions">
+        {% if draft %}
+          <button type="submit" name="action" value="go:offer_edit:{{ draft.id }}" class="btn btn-secondary btn-small">Salva e modifica la bozza</button>
+          <input type="hidden" name="offer_rev_{{ draft.id }}" value="{{ draft.revision }}">
+          <label class="label" for="channel_{{ draft.id }}">Canale</label>
+          <select id="channel_{{ draft.id }}" name="channel_{{ draft.id }}">
+            {% for channel in offer_channels %}<option value="{{ channel }}" {{ 'selected' if (form.get('channel_' ~ draft.id) or 'Di persona') == channel }}>{{ channel }}</option>{% endfor %}
+          </select>
+          <button type="submit" name="action" value="offer_communicate:{{ draft.id }}" class="btn btn-small">Salva e segna come comunicata</button>
+        {% elif scope.latest_sent %}
+          <input type="hidden" name="offer_new_id_{{ scope.latest_sent.id }}" value="{{ form.get('offer_new_id_' ~ scope.latest_sent.id) or new_uuid() }}">
+          <button type="submit" name="action" value="offer_version:{{ scope.latest_sent.id }}" class="btn btn-secondary btn-small">Salva e crea nuova versione</button>
+        {% else %}
+          <span class="muted small">Nessuna proposta.</span>
+          <button type="submit" name="action" value="go:offer_new:{{ scope.lead_id or 'famiglia' }}" class="btn btn-secondary btn-small">Salva e crea la proposta{{ ' familiare' if not scope.lead_id }}</button>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+  <p class="small">In famiglia risultano: {% for lead in ctx.leads %}{{ lead.display_name }} · {{ [lead.grade, lead.school_year]|select|join(' ') or 'anno non indicato' }} · {{ lead.status|label }}{% if not loop.last %}; {% endif %}{% else %}nessuna richiesta{% endfor %}. <strong>Nessuna riduzione viene applicata automaticamente.</strong></p>
+{% endcall %}
+
+{% call section(states[9], open_section, 'iv-internal') %}
+  <p class="small"><strong>Interno KITE — non condividere né leggere alla famiglia.</strong> Si può compilare dopo, a famiglia uscita.</p>
+  <div class="field"><span class="label">Interesse percepito</span>
+    {{ radios('interest', catalog.INTEREST_LEVELS, form.get('interest'), 'INTEREST_LEVELS') }}</div>
+  <div class="field"><span class="label">Tempistica della decisione</span>
+    {{ radios('timing', catalog.DECISION_TIMINGS, form.get('timing'), 'DECISION_TIMINGS') }}</div>
+  <div class="form-grid">
+    <div class="field"><label for="driver">Principale driver</label>
+      <select id="driver" name="driver">{{ options(catalog.DRIVERS, form.get('driver'), 'DRIVERS', 'Non indicato') }}</select></div>
+    <div class="field"><label for="obstacle">Principale ostacolo</label>
+      <select id="obstacle" name="obstacle">{{ options(catalog.OBSTACLES, form.get('obstacle'), 'OBSTACLES', 'Non indicato') }}</select></div>
+  </div>
+  <div class="field wide"><label for="local_observations">Nota interna</label>
+    <textarea id="local_observations" name="local_observations" maxlength="4000">{{ form.get('local_observations', '') }}</textarea>
+    <span class="hint">Scrivi in modo professionale e fattuale, come se la famiglia potesse leggerla. Se chiede di accedere ai propri dati (GDPR, art. 15), anche questa nota può doverle essere comunicata.</span></div>
+{% endcall %}

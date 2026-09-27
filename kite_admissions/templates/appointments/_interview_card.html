@@ -1,0 +1,33 @@
+{# Scheda «Colloquio» della pagina appuntamento: riepilogo e accesso alla pagina del colloquio, senza moduli. #}
+{% from "_appt.html" import when %}
+{% from "appointments/_interview_summary.html" import summary_lines %}
+<section class="card" id="colloquio">
+  <span id="resoconto"></span>
+  <div class="card-head">
+    <h2>Colloquio</h2>
+    <div class="actions">
+      <a class="btn" href="{{ url_for('appointments.interview', appointment_id=a.id) }}">Prepara e conduci il colloquio</a>
+      {% if a.visit_outcome != 'SVOLTA' %}<a class="btn btn-secondary" href="{{ url_for('appointments.interview', appointment_id=a.id, sezione='k') }}">Registra l'esito</a>{% endif %}
+    </div>
+  </div>
+  {% if discrepancy %}
+    <div class="flash flash-warning">La visita è registrata il {{ a.visited_at|d }}, ma su Google Calendar l'evento ora è {{ when(a) }}. La data della visita non viene cambiata.</div>
+  {% endif %}
+  {% if summary and summary.lines %}
+    {{ summary_lines(summary) }}
+  {% elif not has_report %}
+    <p class="empty">Colloquio non ancora iniziato: prepara l'incontro e compila le sezioni durante la visita.</p>
+  {% endif %}
+  {% if interview.saved_at %}<p class="item-meta">Ultimo salvataggio del colloquio: {{ interview.saved_at|dt }}</p>
+  {% elif has_report %}<p class="item-meta">Ultima modifica {{ a.updated_at|dt }} ({{ a.updated_by }})</p>{% endif %}
+  {% if a.visit_report or a.local_observations %}
+    <details class="panel">
+      <summary>Sintesi libera e nota interna</summary>
+      <div class="panel-body">
+        {% if a.visit_report %}<h3>Sintesi libera</h3><p class="pre small">{{ a.visit_report }}</p>{% endif %}
+        {% if a.local_observations %}<h3>Nota interna <span class="iv-tag iv-tag-interno">Interno KITE — non condividere con la famiglia</span></h3><p class="pre small">{{ a.local_observations }}</p>{% endif %}
+      </div>
+    </details>
+  {% endif %}
+  <p class="small"><a href="{{ url_for('families.detail', family_id=a.family_id) }}#offerte">Condizioni comunicate: proposte nella scheda famiglia</a></p>
+</section>

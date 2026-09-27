@@ -1,7 +1,9 @@
 """Follow-up: azione, scadenza, nota; APERTO / COMPLETATO / ANNULLATO (SPEC §3, §7).
 
-Responsabile implicito: Ionut. «Scaduto» deriva dalla data locale di Roma. Completare un
-richiamo non inventa una telefonata riuscita: l'esito è quello scritto da Ionut.
+Responsabile: etichetta libera con suggerimenti (v1.1, OD-4); vuota = Ionut, come nella V1. Non è un
+utente e non assegna nulla. «Scaduto» deriva dalla data locale di Roma. Completare un richiamo non
+inventa una telefonata riuscita: l'esito è quello scritto da Ionut. `appointment_id` indica
+l'incontro da cui nasce il passo: si fissa alla creazione e non si modifica dall'interfaccia.
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ from ..timeutil import rome_today
 from .common import AlreadySavedError, NotFoundError, StaleWriteError, ValidationError, clean, stamp
 from .families import parse_date_field
 
+ASSIGNEE_LIMIT = 120
+
 
 def parse_followup(form: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
     action = form.get(prefix + "action") or ""
@@ -28,7 +32,11 @@ def parse_followup(form: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
     note = clean(form.get(prefix + "note"), 2000)
     if action == "ALTRO" and not note:
         raise ValidationError("Per «Altro» descrivi l'azione nella nota.", prefix + "note")
-    return {"action": action, "due_on": due_on, "note": note,
+    try:
+        assignee = clean(form.get(prefix + "assignee"), ASSIGNEE_LIMIT)
+    except ValidationError:
+        raise ValidationError(f"Responsabile: massimo {ASSIGNEE_LIMIT} caratteri.", prefix + "assignee") from None
+    return {"action": action, "due_on": due_on, "note": note, "assignee": assignee,
             "student_lead_id": form.get(prefix + "student_lead_id") or None}
 
 
@@ -41,10 +49,10 @@ def insert_followup(db: Database, family_id: str, values: Mapping[str, Any], *, 
                     now: datetime) -> str:
     _check_lead(db, family_id, values.get("student_lead_id"))
     db.execute(
-        "INSERT INTO FollowUp (id, family_id, student_lead_id, action, due_on, note, status, created_at, updated_at, "
-        "created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, 'APERTO', ?, ?, ?, ?)",
+        "INSERT INTO FollowUp (id, family_id, student_lead_id, action, due_on, note, assignee, appointment_id, status, "
+        "created_at, updated_at, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'APERTO', ?, ?, ?, ?)",
         (followup_id, family_id, values.get("student_lead_id"), values["action"], values["due_on"], values["note"],
-         stamp(now), stamp(now), AUTHOR, AUTHOR),
+         values.get("assignee"), values.get("appointment_id"), stamp(now), stamp(now), AUTHOR, AUTHOR),
     )
     return followup_id
 
@@ -69,6 +77,7 @@ def get_followup(db: Database, followup_id: str, family_id: str) -> sqlite3.Row:
 
 def update_followup(db: Database, followup_id: str, family_id: str, values: Mapping[str, Any], *, revision: int,
                     now: datetime) -> None:
+    """Modifica di azione, scadenza, nota, richiesta e responsabile; l'incontro d'origine non cambia."""
     with db.transaction():
         current = get_followup(db, followup_id, family_id)
         if current["status"] != "APERTO":
@@ -77,10 +86,10 @@ def update_followup(db: Database, followup_id: str, family_id: str, values: Mapp
             raise StaleWriteError()
         _check_lead(db, family_id, values.get("student_lead_id"))
         cursor = db.execute(
-            "UPDATE FollowUp SET action = ?, due_on = ?, note = ?, student_lead_id = ?, updated_at = ?, updated_by = ?, "
-            "revision = revision + 1 WHERE id = ? AND revision = ?",
-            (values["action"], values["due_on"], values["note"], values.get("student_lead_id"), stamp(now), AUTHOR,
-             followup_id, revision),
+            "UPDATE FollowUp SET action = ?, due_on = ?, note = ?, student_lead_id = ?, assignee = ?, updated_at = ?, "
+            "updated_by = ?, revision = revision + 1 WHERE id = ? AND revision = ?",
+            (values["action"], values["due_on"], values["note"], values.get("student_lead_id"),
+             values.get("assignee"), stamp(now), AUTHOR, followup_id, revision),
         )
         if cursor.rowcount != 1:
             raise StaleWriteError()
@@ -109,7 +118,9 @@ def close_followup(db: Database, followup_id: str, family_id: str, *, status: st
 
 def family_followups(db: Database, family_id: str) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
     rows = db.all(
-        "SELECT f.*, s.display_name AS lead_name FROM FollowUp f LEFT JOIN StudentLead s ON s.id = f.student_lead_id "
+        "SELECT f.*, s.display_name AS lead_name, a.src_start_at AS origin_start_at, a.src_start_date AS origin_start_date "
+        "FROM FollowUp f LEFT JOIN StudentLead s ON s.id = f.student_lead_id "
+        "LEFT JOIN Appointment a ON a.id = f.appointment_id "
         "WHERE f.family_id = ? ORDER BY f.due_on, f.created_at", (family_id,))
     open_rows = [row for row in rows if row["status"] == "APERTO"]
     closed = sorted((row for row in rows if row["status"] != "APERTO"), key=lambda row: row["updated_at"], reverse=True)

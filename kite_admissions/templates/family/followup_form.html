@@ -19,9 +19,14 @@
       <div class="field"><label for="student_lead_id">Riguarda</label>
         <select id="student_lead_id" name="student_lead_id"><option value="">Tutta la famiglia</option>
           {% for lead in leads %}<option value="{{ lead.id }}" {{ 'selected' if form.student_lead_id == lead.id }}>{{ lead.display_name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="assignee">Responsabile</label>
+        <input type="text" id="assignee" name="assignee" value="{{ form.assignee or '' }}" list="assignees" maxlength="120" placeholder="vuoto = Ionut">
+        <datalist id="assignees">{% for name in assignee_suggestions %}<option value="{{ name }}">{% endfor %}</datalist>
+        <span class="hint">Solo un'etichetta: nessun utente, nessuna assegnazione.</span></div>
       <div class="field wide"><label for="note">Nota</label>
         <input type="text" id="note" name="note" value="{{ form.note or '' }}" maxlength="2000"></div>
     </div>
+    {% if followup.appointment_id %}<p class="item-meta">Nato dal <a href="{{ url_for('appointments.detail', appointment_id=followup.appointment_id) }}#colloquio">colloquio dell'incontro collegato</a>: il legame non si modifica.</p>{% endif %}
     <div class="form-actions">
       <button type="submit" class="btn">Salva</button>
       <a href="{{ url_for('families.detail', family_id=family.id) }}#follow-up">Annulla</a>

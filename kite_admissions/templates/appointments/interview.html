@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, errors_box %}
+{% from "_appt.html" import when, status_badges %}
+{% block title %}Colloquio · {{ a.family_name or a.src_title or 'Appuntamento' }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Colloquio{% if a.family_name %} · {{ a.family_name }}{% endif %}</h1>
+      <div class="sub">{{ when(a) }} {{ status_badges(a) }}{% if a.src_title %} · <span class="muted">{{ a.src_title }}</span>{% endif %}</div>
+    </div>
+    <div class="actions">
+      {% if a.src_html_link %}<a class="btn btn-secondary" href="{{ a.src_html_link }}" target="_blank" rel="noopener noreferrer">Apri in Google Calendar</a>{% endif %}
+      <a class="btn btn-quiet" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#colloquio">Torna all'appuntamento</a>
+    </div>
+  </div>
+
+  {% if not linked %}
+    <section class="card alert">
+      <h2>Prima collega la famiglia</h2>
+      <p>L'appuntamento non è ancora collegato a una famiglia: il colloquio si prepara e si conduce sulla scheda giusta, per non copiare dati altrove.</p>
+      <div class="actions">
+        <a class="btn" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#locale">Collega una famiglia esistente</a>
+        <a class="btn btn-secondary" href="{{ url_for('appointments.create_family', appointment_id=a.id) }}">Crea famiglia dall'evento</a>
+      </div>
+    </section>
+  {% else %}
+    {{ errors_box(errors) }}
+    {% if a.src_status == 'CANCELLED_SOURCE' %}<div class="flash flash-warning">Evento annullato su Google Calendar: il colloquio resta compilabile se l'incontro è avvenuto comunque.</div>{% endif %}
+    {% if discrepancy %}<div class="flash flash-warning">La visita è registrata il {{ a.visited_at|d }}, ma su Google Calendar l'evento ora è {{ when(a) }}. La data della visita non viene cambiata.</div>{% endif %}
+
+    {# novalidate: i controlli li fa il server; un campo non valido in una sezione chiusa non deve bloccare «Salva». #}
+    <form method="post" id="colloquio" class="interview" data-guard novalidate>
+      {{ csrf() }}
+      {% for name in ['family_id', 'a_phase', 'a_rev', 'a_fp', 'f_rev', 'f_fp', 'conclude_id', 'verify_new_id', 'step1_new_id', 'step2_new_id'] %}
+        <input type="hidden" name="{{ name }}" value="{{ form.get(name, '') }}">
+      {% endfor %}
+      {% for index, lead in page.leads %}
+        <input type="hidden" name="s{{ index }}_id" value="{{ lead.id }}">
+        <input type="hidden" name="s{{ index }}_rev" value="{{ form.get('s' ~ index ~ '_rev', '') }}">
+        <input type="hidden" name="s{{ index }}_fp" value="{{ form.get('s' ~ index ~ '_fp', '') }}">
+      {% endfor %}
+
+      {% if conflicts %}
+        <section class="card alert conflict" role="alert">
+          <h2>Salvataggio non eseguito: dati cambiati altrove</h2>
+          <p class="small">Dopo l'apertura di questa pagina alcuni dati sono stati modificati in un'altra scheda. Nulla è stato salvato e qui sotto restano i tuoi valori. Per ogni scheda scegli cosa tenere, poi salva di nuovo.</p>
+          {% for conflict in conflicts %}
+            <input type="hidden" name="{{ conflict.key }}_current_rev" value="{{ conflict.current_rev }}">
+            <div class="conflict-item">
+              <h3>{{ conflict.label }}</h3>
+              {% if conflict.differences %}
+                <table class="list compact">
+                  <thead><tr><th>Campo</th><th>Valore attuale</th><th>Il tuo valore</th></tr></thead>
+                  <tbody>{% for diff in conflict.differences %}<tr><td>{{ diff.field }}</td><td class="pre">{{ diff.current }}</td><td class="pre">{{ diff.mine }}</td></tr>{% endfor %}</tbody>
+                </table>
+              {% endif %}
+              <label class="check"><input type="radio" name="{{ conflict.key }}_resolve" value="mine"> <span><strong>Mantieni i miei valori</strong> e sovrascrivi quelli attuali</span></label>
+              <label class="check"><input type="radio" name="{{ conflict.key }}_resolve" value="theirs"> <span><strong>Usa i valori attuali</strong> (i miei per questa scheda non si salvano)</span></label>
+            </div>
+          {% endfor %}
+        </section>
+      {% endif %}
+
+      <div class="interview-bar">
+        <nav class="iv-index" aria-label="Sezioni del colloquio">
+          <a href="#sez-prepara">Prepara</a>
+          {% for state in page.states %}<a href="#sez-{{ state.code }}" class="st-{{ state.status }}" title="{{ state.title }}">{{ state.code|upper }}<span class="iv-mini">{{ state.icon }}</span></a>{% endfor %}
+        </nav>
+        <span class="item-meta">{% if page.saved_at %}Ultimo salvataggio del colloquio: {{ page.saved_at|dt }}{% else %}Colloquio non ancora salvato{% endif %}</span>
+        <button type="submit" name="action" value="save:{{ open_section or 'prepara' }}" class="btn btn-small">Salva</button>
+      </div>
+
+      {% include "appointments/_interview_prepare.html" %}
+      {% include "appointments/_interview_sections.html" %}
+      {% include "appointments/_interview_closing.html" %}
+    </form>
+    <p class="item-meta">«Salva» registra i contenuti in qualsiasi momento; esito, prossimi passi e chiusure diventano operativi solo con «Concludi colloquio». Nessun messaggio viene inviato alla famiglia.</p>
+  {% endif %}
+{% endblock %}

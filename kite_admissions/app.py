@@ -272,6 +272,8 @@ def _register_hooks(app: Flask, state: AppState) -> None:
         if g.pop("gate_entered", False):
             state.gate.exit()
 
+    from . import catalog
+    from .services import interview as interview_service
     from .services import offers as offer_service
     from .services.common import new_id
 
@@ -289,6 +291,9 @@ def _register_hooks(app: Flask, state: AppState) -> None:
         offer_reductions=offer_service.reductions_of,
         offer_warning=offer_service.consistency_warning,
         offer_needs_authorization=offer_service.needs_authorization,
+        step_label=interview_service.step_label,
+        wait_note=catalog.WAIT_NOTE,
+        assignee_suggestions=catalog.ASSIGNEE_SUGGESTIONS,
     )
 
     @app.errorhandler(HTTPException)

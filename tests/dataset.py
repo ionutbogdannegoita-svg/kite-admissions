@@ -74,9 +74,11 @@ def build(app, client, fake, clock) -> dict[str, str]:
 
         client.post(f"/appuntamenti/{ids['appt_rossi']}/collega", data={"family_id": ids["rossi"], "lead_id": ids["luca"],
                                                                       "revision": revision(db, "Appointment", ids["appt_rossi"])})
+        # v1.1 (OD-5): una visita svolta di un appuntamento collegato si chiude con un prossimo passo.
         client.post(f"/appuntamenti/{ids['appt_rossi']}/resoconto", data={
             "visit_outcome": "SVOLTA", "visited_at": "2026-09-30T15:05", "visit_report": "Visita svolta (esempio)",
-            "local_observations": "Osservazione di esempio", "revision": revision(db, "Appointment", ids["appt_rossi"])})
+            "local_observations": "Osservazione di esempio", "next_action": "RICHIAMARE", "next_due_on": "2026-10-05",
+            "next_new_id": str(uuid.uuid4()), "revision": revision(db, "Appointment", ids["appt_rossi"])})
         client.post(f"/appuntamenti/{ids['appt_bianchi']}/collega", data={
             "family_id": ids["bianchi"], "revision": revision(db, "Appointment", ids["appt_bianchi"])})
 
