@@ -6,12 +6,13 @@
     <div>
       <h1>{% if offer %}Bozza della proposta v{{ offer.version_no }}{% else %}Nuova proposta economica{% endif %}</h1>
       <div class="sub"><a href="{{ url_for('families.detail', family_id=family.id) }}#offerte">{{ family.display_name }}</a>
-        {% if offer %} · {{ 'per ' ~ scope_lead.display_name if scope_lead else 'per la famiglia' }}{% endif %} · importi in EUR</div>
+        {% if offer %} · {% if scope_lead %}per {{ [scope_lead.display_name, scope_lead.grade, scope_lead.school_year]|select|join(' · ') }}{% else %}proposta familiare{% endif %}{% endif %} · importi in EUR</div>
     </div>
   </div>
   {{ errors_box(errors) }}
   <form method="post" class="card">
     {{ csrf() }}
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
     {% if offer %}<input type="hidden" name="revision" value="{{ form.revision }}">
     {% else %}<input type="hidden" name="new_id" value="{{ form.new_id }}">{% endif %}
 
@@ -20,24 +21,71 @@
         <label for="student_lead_id">Ambito della proposta</label>
         <select id="student_lead_id" name="student_lead_id">
           <option value="">Proposta familiare (senza un alunno specifico)</option>
-          {% for lead in leads %}<option value="{{ lead.id }}" {{ 'selected' if form.student_lead_id == lead.id }}>Per {{ lead.display_name }} · {{ lead.school_year or 'anno non indicato' }}</option>{% endfor %}
+          {% for lead in leads %}<option value="{{ lead.id }}" {{ 'selected' if form.student_lead_id == lead.id }}>Per {{ [lead.display_name, lead.grade, lead.school_year or 'anno non indicato']|select|join(' · ') }}</option>{% endfor %}
         </select>
       </div>
     {% endif %}
 
-    <div class="form-grid spaced">
-      <div class="field"><label for="standard_fee">Retta standard di riferimento</label>
-        <input type="text" id="standard_fee" name="standard_fee" value="{{ form.standard_fee or '' }}" inputmode="decimal" placeholder="es. 5.400,00"></div>
-      <div class="field"><label for="proposed_fee" class="required">Quota proposta</label>
-        <input type="text" id="proposed_fee" name="proposed_fee" value="{{ form.proposed_fee or '' }}" inputmode="decimal" placeholder="es. 4.900,00"></div>
-      <div class="field"><span class="label required">Periodicità (vale per retta e quota)</span>
-        {% for value in periodicities %}
-          <label class="check"><input type="radio" name="periodicity" value="{{ value }}" {{ 'checked' if form.periodicity == value }}> {{ value|label }}</label>
-        {% endfor %}</div>
-      <div class="field"><label for="valid_until">Valida fino al</label>
-        <input type="date" id="valid_until" name="valid_until" value="{{ form.valid_until or '' }}"></div>
-    </div>
-    <p class="item-meta">Se retta e quota hanno la stessa base, lo sconto è la differenza. Condizioni diverse vanno scritte nelle note, senza percentuali ambigue. Gli importi con periodicità diverse non vengono sommati.</p>
+    <fieldset class="price-fieldset spaced">
+      <legend>Listino standard</legend>
+      <div class="form-grid">
+        <div class="field"><label for="standard_fee">Retta di listino</label>
+          <input type="text" id="standard_fee" name="standard_fee" value="{{ form.standard_fee or '' }}" inputmode="decimal" placeholder="es. 5.400,00">
+          <span class="hint">Il riferimento che hai presentato: nessun listino centrale.</span></div>
+        <div class="field"><span class="label required">Periodicità (vale per listino, riduzioni e retta finale)</span>
+          {% for value in periodicities %}
+            <label class="check"><input type="radio" name="periodicity" value="{{ value }}" {{ 'checked' if form.periodicity == value }}> {{ value|label }}</label>
+          {% endfor %}</div>
+      </div>
+    </fieldset>
+
+    <fieldset class="price-fieldset reserved">
+      <legend>Condizione riservata</legend>
+      <table class="list compact">
+        <thead><tr><th>Motivo</th><th>Riduzione sulla retta</th><th>Nota</th></tr></thead>
+        <tbody>
+          {% for index in reduction_rows %}
+            {% set reason = form['reduction_reason_' ~ index] %}
+            <tr>
+              <td><select name="reduction_reason_{{ index }}" aria-label="Motivo della riduzione {{ index }}">
+                <option value="">—</option>
+                {% for entry in reasons %}<option value="{{ entry.code }}" {{ 'selected' if reason == entry.code }}>{{ entry.label }}{% if entry.needs_authorization %} (serve «Autorizzata da»){% endif %}</option>{% endfor %}
+                {% if reason and reason not in reasons|map(attribute='code')|list %}<option value="{{ reason }}" selected>{{ reason|cat('REDUCTION_REASONS') }}</option>{% endif %}
+              </select></td>
+              <td><input type="text" name="reduction_amount_{{ index }}" value="{{ form['reduction_amount_' ~ index] or '' }}" inputmode="decimal" placeholder="es. 540,00" aria-label="Importo della riduzione {{ index }}"></td>
+              <td><input type="text" name="reduction_note_{{ index }}" value="{{ form['reduction_note_' ~ index] or '' }}" maxlength="200" aria-label="Nota della riduzione {{ index }}" placeholder="obbligatoria per «Altra condizione discrezionale»"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="hint">Si registra ciò che è stato deciso, riga per riga: nessuna riduzione viene calcolata o applicata automaticamente.</p>
+      <div class="form-grid">
+        <div class="field"><label for="authorized_by">Autorizzata da</label>
+          <input type="text" id="authorized_by" name="authorized_by" value="{{ form.authorized_by or '' }}" list="authorizers" maxlength="120">
+          <datalist id="authorizers">{% for name in authorizers %}<option value="{{ name }}">{% endfor %}</datalist>
+          <span class="hint">Obbligatoria per promozione autorizzata, accordo con la Direzione e altra condizione discrezionale; non serve per fratelli e pagamento annuale.</span>
+          {% if offer and offer.previous_offer_id %}
+            <span class="hint">{% if previous_authorization %}v{{ offer.version_no - 1 }} autorizzata da: <strong>{{ previous_authorization }}</strong> — per questa versione va indicata di nuovo.{% else %}La versione precedente non indicava un'autorizzazione.{% endif %}</span>
+          {% endif %}</div>
+      </div>
+    </fieldset>
+
+    <fieldset class="price-fieldset final">
+      <legend>Importo finale comunicato</legend>
+      <div class="form-grid">
+        <div class="field"><label for="proposed_fee" class="required">Retta finale comunicata</label>
+          <input type="text" id="proposed_fee" name="proposed_fee" value="{{ form.proposed_fee or '' }}" inputmode="decimal" placeholder="es. 4.860,00"></div>
+        <div class="field"><label for="enrollment_fee">Quota d'iscrizione (una tantum)</label>
+          <input type="text" id="enrollment_fee" name="enrollment_fee" value="{{ form.enrollment_fee or '' }}" inputmode="decimal" placeholder="es. 300,00">
+          <span class="hint">Quella comunicata; una condizione sulla quota si descrive nelle note.</span></div>
+        <div class="field"><label for="valid_until">Valida fino al</label>
+          <input type="date" id="valid_until" name="valid_until" value="{{ form.valid_until or '' }}"></div>
+        <div class="field wide"><label for="conditions">Note e condizioni</label>
+          <textarea id="conditions" name="conditions" maxlength="4000" placeholder="es. pagamento in 10 rate">{{ form.conditions or '' }}</textarea></div>
+      </div>
+      <p class="hint">Tutti gli importi sono scritti da te: nessuno sconto viene calcolato. Gli importi con periodicità diverse non vengono sommati.</p>
+    </fieldset>
+    {% if warning %}<div class="flash flash-warning small" role="status">{{ warning }}</div>{% endif %}
 
     <fieldset class="spaced">
       <legend>Servizi inclusi o aggiuntivi</legend>
@@ -59,12 +107,10 @@
       </table>
     </fieldset>
 
-    <div class="field wide"><label for="conditions">Note e condizioni</label>
-      <textarea id="conditions" name="conditions" maxlength="4000">{{ form.conditions or '' }}</textarea></div>
     <div class="form-actions">
       <button type="submit" class="btn">Salva bozza</button>
-      <a href="{{ url_for('families.detail', family_id=family.id) }}#offerte">Annulla</a>
+      <a href="{{ back }}">Annulla</a>
     </div>
-    <p class="item-meta">Salvare non comunica nulla: nessuna email o messaggio viene inviato.</p>
+    <p class="item-meta">Salvare non comunica nulla: nessuna email o messaggio viene inviato. La proposta diventa definitiva solo con «Segna come comunicata».</p>
   </form>
 {% endblock %}

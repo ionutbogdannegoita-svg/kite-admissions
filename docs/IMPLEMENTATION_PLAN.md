@@ -66,3 +66,7 @@ I riferimenti AC indicano le prove pertinenti della specifica, non risultati gi�
 - **Cosa entra:** prove AC01–AC10 di SPEC §11 su un dataset sintetico piccolo e rappresentativo, inclusi B1 e B2 e i flussi integrati fra gli slice.
 - **Cosa NON entra:** nuovi requisiti, funzionalità V2, ottimizzazioni speculative o avvio di attività successive.
 - **Gate:** tutti i dieci criteri verificati con evidenze; nessuna dichiarazione di successo per controlli non eseguiti. A criteri soddisfatti, chiudere la V1 secondo il protocollo Ionut e fermarsi.
+
+## v1.1 — Interview Workflow (Issue #2)
+
+Gli slice della v1.1 sono definiti nella [specifica operativa](PROPOSTA_V1.1_INTERVIEW_WORKFLOW.md) (§10) e nella Issue #2, con gate a ogni slice: 1 Fondamenta (IW01, IW13), 2 Alunno e famiglia (IW10, parte di IW12), 3 Economia (IW06 parte offerta), 4 Colloquio (IW02–IW07), 5 Riepilogo, storico, documentazione e collaudo (IW08, IW09, IW11, IW12, IW14). Stesse regole della V1: dati sintetici, nessuna funzione oltre la specifica, stop a criteri soddisfatti.

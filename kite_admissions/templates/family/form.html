@@ -12,6 +12,7 @@
 
   <form method="post" class="card">
     {{ csrf() }}
+    {% if form.next %}<input type="hidden" name="next" value="{{ form.next }}">{% endif %}
     {% if family %}
       <input type="hidden" name="revision" value="{{ form.revision }}">
     {% else %}
@@ -41,9 +42,17 @@
           <input type="text" id="display_name" name="display_name" value="{{ form.display_name or '' }}" required maxlength="200" placeholder="es. Famiglia Rossi" autofocus>
         </div>
         <div class="field">
-          <label for="contact_source">Fonte del contatto</label>
-          <input type="text" id="contact_source" name="contact_source" value="{{ form.contact_source or '' }}" list="sources" maxlength="120">
-          <datalist id="sources">{% for source in sources %}<option value="{{ source }}">{% endfor %}</datalist>
+          <label for="contact_source">Come ci hanno conosciuto</label>
+          <select id="contact_source" name="contact_source">
+            <option value="">Non indicato</option>
+            {% for source in sources %}<option value="{{ source }}" {{ 'selected' if form.contact_source == source }}>{{ source }}</option>{% endfor %}
+            {% if form.contact_source and form.contact_source not in sources %}<option value="{{ form.contact_source }}" selected>{{ form.contact_source }} (valore precedente)</option>{% endif %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="contact_source_detail">Dettaglio della fonte</label>
+          <input type="text" id="contact_source_detail" name="contact_source_detail" value="{{ form.contact_source_detail or '' }}" maxlength="200" placeholder="es. quale evento o quale famiglia">
+          <span class="hint">Solo se utile, per ringraziare o ricordarlo; nessun altro dato di chi vi ha segnalati.</span>
         </div>
         <div class="field">
           <label for="first_contact_on">Data primo contatto</label>

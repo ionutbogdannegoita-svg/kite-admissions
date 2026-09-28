@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import csrf, errors_box %}
+{% from "appointments/_interview_lead_fields.html" import identity_fields, language_fields, profile_fields %}
 {% block title %}{{ 'Modifica richiesta' if lead else 'Nuova richiesta' }}{% endblock %}
 {% block content %}
   <div class="page-head">
@@ -11,6 +12,7 @@
   {{ errors_box(errors) }}
   <form method="post" class="card">
     {{ csrf() }}
+    {% if form.next %}<input type="hidden" name="next" value="{{ form.next }}">{% endif %}
     {% if lead %}<input type="hidden" name="revision" value="{{ form.revision }}">
     {% else %}<input type="hidden" name="new_id" value="{{ form.new_id }}">{% endif %}
 
@@ -23,32 +25,32 @@
       </div>
     {% endif %}
 
-    <div class="form-grid">
-      <div class="field"><label for="display_name" class="required">Nome o riferimento provvisorio</label>
-        <input type="text" id="display_name" name="display_name" value="{{ form.display_name or '' }}" required maxlength="200" autofocus></div>
-      <div class="field"><label for="school_year">Anno scolastico</label>
-        <select id="school_year" name="school_year">
-          <option value="">Non indicato</option>
-          {% for year in years %}<option value="{{ year }}" {{ 'selected' if form.school_year == year }}>{{ year }}</option>{% endfor %}
-          {% if form.school_year and form.school_year not in years %}<option value="{{ form.school_year }}" selected>{{ form.school_year }}</option>{% endif %}
-        </select></div>
-      <div class="field"><label for="grade">Classe o ciclo</label>
-        <input type="text" id="grade" name="grade" value="{{ form.grade or '' }}" list="grades" maxlength="80">
-        <datalist id="grades">{% for grade in grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
-      <div class="field"><label for="origin">Provenienza o zona</label>
-        <input type="text" id="origin" name="origin" value="{{ form.origin or '' }}" maxlength="200"></div>
-      <div class="field"><label for="birth_year">Anno di nascita (solo se utile)</label>
-        <input type="number" id="birth_year" name="birth_year" value="{{ form.birth_year or '' }}" min="1990" max="2100"></div>
+    <fieldset>
+      <legend>Alunno e richiesta</legend>
+      {{ identity_fields(form, '', years, grades, current_grades, today) }}
       {% if lead and lead.status == 'IN_PAUSA' %}
-        <div class="field"><label for="review_on" class="required">Data di riesame</label>
-          <input type="date" id="review_on" name="review_on" value="{{ form.review_on or '' }}" required></div>
+        <div class="form-grid spaced">
+          <div class="field"><label for="review_on" class="required">Data di riesame</label>
+            <input type="date" id="review_on" name="review_on" value="{{ form.review_on or '' }}" required></div>
+        </div>
       {% endif %}
-      <div class="field wide"><label for="notes">Note sulla richiesta</label>
-        <textarea id="notes" name="notes" maxlength="4000">{{ form.notes or '' }}</textarea></div>
-    </div>
+    </fieldset>
+
+    <details class="panel" {{ 'open' if form.get('lang_IT') or form.get('lang_EN') or form.get('lang_FR') or form.get('other_lang_1_name') }}>
+      <summary>Lingue (dichiarate dalla famiglia)</summary>
+      <div class="panel-body">{{ language_fields(form, '', languages, levels, other_rows) }}</div>
+    </details>
+
+    <details class="panel" {{ 'open' if form.get('profile_note') or form.get('educational_review') in ('1', 1) }}>
+      <summary>Profilo scolastico (dichiarato dalla famiglia)</summary>
+      <div class="panel-body">{{ profile_fields(form, '') }}</div>
+    </details>
+
+    <div class="field wide spaced"><label for="notes">Note sulla richiesta</label>
+      <textarea id="notes" name="notes" maxlength="4000">{{ form.notes or '' }}</textarea></div>
     <div class="form-actions">
       <button type="submit" class="btn">Salva richiesta</button>
-      <a href="{{ url_for('families.detail', family_id=family.id) }}#richieste">Annulla</a>
+      <a href="{{ back }}">Annulla</a>
     </div>
   </form>
 {% endblock %}

@@ -379,3 +379,49 @@ Le cinque decisioni preliminari sono **recepite** e non vengono riproposte come 
 Restano da fornire al momento della configurazione il calendario sorgente/account autorizzato e l'eventuale destinazione per la seconda copia di backup. Non impediscono di validare il processo e non giustificano architetture alternative costruite in anticipo.
 
 Questa specifica deve essere validata da Ionut **prima di implementare**, come richiesto. Dopo la validazione si potrà delimitare la prima Issue/equivalente approvato secondo il protocollo Ionut; questa revisione non avvia sviluppo, installazioni o collegamenti Google.
+
+## 14. Addendum v1.1 — Colloquio di ammissione (Interview Workflow)
+
+Versione 1.1 · approvata dal titolare il 27/09/2026 · Issue #2 «KITE Admissions v1.1 — Interview Workflow». La specifica operativa completa, con le Owner Decision OD-1…OD-7 e i criteri IW01–IW14, è [docs/PROPOSTA_V1.1_INTERVIEW_WORKFLOW.md](docs/PROPOSTA_V1.1_INTERVIEW_WORKFLOW.md) (versione 1.0). Questo addendum riassume ciò che cambia rispetto ai capitoli precedenti; dove diverge, prevale l'addendum. Le scelte tecniche sono DEC-024…DEC-034 in [DECISIONS.md](DECISIONS.md).
+
+### 14.1 Perimetro
+
+- È un upgrade mirato della V1: stessa architettura, **stesse sette tabelle**, nessuna funzione V2 (§12 resta valido).
+- Schema versione 2, solo additivo: colonne nuove, un indice, due trigger e il trigger di congelamento delle offerte ricreato. Migrazione al primo avvio dopo la copia pre-operazione obbligatoria (§9.2); i backup della V1 restano ripristinabili e vengono migrati.
+- Liste del colloquio centralizzate in `kite_admissions/catalog.py`, senza configurazione a runtime.
+
+### 14.2 Il colloquio
+
+- Un incontro = un evento Calendar = una riga `Appointment` = un colloquio (`Appointment.interview`, JSON). Nessun colloquio senza evento Calendar: la segreteria crea l'evento, anche a posteriori.
+- Pagina **Colloquio** (`/appuntamenti/<id>/colloquio`), solo per appuntamenti collegati a una famiglia:
+  - **Prepara incontro**: famiglia, recapiti, fonte, alunni con età e verifica, fratelli, incontri precedenti, proposte, follow-up aperti, ultime note e l'elenco calcolato «Da chiedere o confermare»; si scrivono solo tipo di incontro, ambito («riguarda») e nota di preparazione.
+  - **Sezioni A–K** nell'ordine della conversazione: presenti e dati dell'alunno, come ci hanno conosciuto, cosa cercano, profilo scolastico e lingue *dichiarati*, esigenze organizzative, cosa abbiamo presentato, domande e dubbi, aspetti economici, valutazione interna (*Interno KITE*), conclusione e prossimo passo.
+  - I dati dell'alunno si correggono nella sua richiesta, la fonte nella famiglia, l'economia nell'offerta: il colloquio non li copia.
+- **«Salva»** registra tutto in qualsiasi momento, senza campi obbligatori, e non registra mai esito, follow-up o chiusure; il salvataggio è atomico su colloquio, alunni e fonte, con revisione e impronta per record e conflitti risolti solo con una scelta esplicita.
+- **«Concludi colloquio»** registra esito e data e, nella stessa transazione, crea fino a tre follow-up, completa quelli precedenti spuntati e chiude le richieste «non prosegue».
+- La pagina dell'appuntamento, per gli appuntamenti collegati, mostra la scheda **Colloquio** con il riepilogo e senza moduli propri; per quelli non collegati restano i moduli V1 di preparazione e resoconto.
+
+### 14.3 Dati dell'alunno e della famiglia (modifica di §3 e §8)
+
+- `StudentLead`: data di nascita facoltativa (l'anno V1 la segue), scuola e classe attuali, lingue dichiarate con livello, contesti bilingui, profilo dichiarato (massimo 500 caratteri), flag neutro «Approfondimento educativo/documentale necessario» con nota operativa. L'età e la verifica per Infanzia e Primaria 1ª sono informative e non bloccano mai la pratica (scuola paritaria, OD-2).
+- `Family`: fonte del contatto a lista chiusa (i valori V1 restano come «valore precedente») e dettaglio facoltativo.
+- Non si raccolgono dati sanitari, religiosi, economici, giudizi o situazioni familiari (§7.2 della specifica operativa); i testi d'aiuto lo ricordano campo per campo.
+
+### 14.4 Offerte (estensione di §6)
+
+- Tre blocchi: **listino standard**, **condizione riservata**, **importo finale comunicato**. Riduzioni a righe con motivo, importo e nota; quota d'iscrizione comunicata; «Autorizzata da» obbligatoria alla comunicazione per promozione, accordo con la Direzione e altra condizione discrezionale.
+- Nessuno sconto calcolato: tutti gli importi sono scritti; un avviso non bloccante segnala se listino − riduzioni ≠ retta finale. I campi nuovi sono congelati da «Segna come comunicata»; la nuova versione non eredita l'autorizzazione.
+
+### 14.5 Prossimo passo (modifica di §7 e §8)
+
+- Il passaggio a «Visita svolta» di un appuntamento collegato richiede un prossimo passo **successivo alla visita**, dal colloquio come dalla route del resoconto. «Attendere risposta della famiglia» con data di riesame è un prossimo passo valido (follow-up ALTRO con nota predefinita). Nessun nuovo stato, esito o azione.
+- Il follow-up ha un **responsabile** come semplice etichetta (vuoto = Ionut) e il legame con l'incontro da cui nasce.
+
+### 14.6 Riepilogo e storico
+
+- Riepilogo ricalcolato, mai salvato: al massimo 12 righe più 2 per ogni alunno in più; dichiarato e interno separati; i dati attuali dell'alunno solo nel colloquio più recente.
+- Scheda famiglia: «Appuntamenti e colloqui» (un incontro per riga, nessuno sovrascrive l'altro) e «Ultimo colloquio»; cronologia con la voce «Colloquio · tipo: esito»; Oggi con il link al colloquio e il responsabile dei follow-up.
+
+### 14.7 Criteri di accettazione
+
+IW01–IW14 della specifica operativa (§8.11), verificati su dati sintetici con test automatici e collaudo su Waitress; le evidenze sono nella Pull Request della v1.1.

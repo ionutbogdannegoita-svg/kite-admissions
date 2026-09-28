@@ -40,7 +40,7 @@ def test_final_qa_flow(make_app, home, clock):
     family_id = location_id(client.post("/famiglie/nuova", data={
         "new_id": str(uuid.uuid4()), "display_name": "Famiglia Esempio Collaudo",
         "primary_adult_name": "Genitore Esempio Collaudo", "primary_phone": "+39 0773 000 901",
-        "contact_source": "Open day", "first_contact_on": "2026-09-25"}), "/famiglie")
+        "contact_source": "Evento / open day", "first_contact_on": "2026-09-25"}), "/famiglie")
 
     # 4. Crea almeno una richiesta (due fratelli, anni diversi).
     for name, year in (("Primo Figlio Esempio", "2027/2028"), ("Secondo Figlio Esempio", "2028/2029")):
@@ -118,7 +118,7 @@ def test_final_qa_flow(make_app, home, clock):
 
     # 14. Cronologia.
     assert "Proposta v1 per la famiglia: 4.900,00 € annuale" in detail
-    assert "Visita svolta" in detail and "Primo contatto (Open day)" in detail
+    assert "Visita svolta" in detail and "Primo contatto (Evento / open day)" in detail
 
     # 15. Crea backup.
     client.post("/dati/backup")

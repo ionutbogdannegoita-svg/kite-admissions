@@ -54,9 +54,9 @@ def test_timeline_is_built_from_records_without_copies(app, client, fake, db, cl
     appointment_id = import_event(app, client, fake, timed("evt-1", "2026-09-30T15:00:00+02:00",
                                                            title="Visita Esempio Cronologia"))
     client.post(f"/appuntamenti/{appointment_id}/collega", data={"family_id": family_id, "revision": 1})
-    client.post(f"/appuntamenti/{appointment_id}/resoconto", data={
+    client.post(f"/appuntamenti/{appointment_id}/resoconto", data={  # v1.1 (OD-5): con il prossimo passo
         "visit_outcome": "SVOLTA", "visited_at": "2026-09-30T15:00", "visit_report": "Visita molto positiva (esempio)",
-        "revision": 2})
+        "next_action": "RICHIAMARE", "next_due_on": "2026-10-05", "next_new_id": str(uuid.uuid4()), "revision": 2})
     note(client, family_id, "Richiamata per chiarimenti sulla mensa (esempio)")
     clock.advance(minutes=5)
     client.post(f"/famiglie/{family_id}/richieste/{lead_id}/stato", data={

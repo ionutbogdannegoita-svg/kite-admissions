@@ -128,59 +128,50 @@
         {% endif %}
       </section>
 
-      <section class="card" id="preparazione">
-        <h2>Preparazione dell'incontro</h2>
-        <form method="post" action="{{ url_for('appointments.preparation', appointment_id=a.id) }}">
-          {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
-          <textarea name="preparation" maxlength="8000" aria-label="Preparazione" placeholder="Cosa chiedere o mostrare, documenti da preparare…">{{ a.preparation or '' }}</textarea>
-          <div class="form-actions"><button type="submit" class="btn btn-secondary btn-small">Salva preparazione</button></div>
-        </form>
-      </section>
+      {% if a.family_id %}
+        {# v1.1: una sola scheda «Colloquio», senza moduli propri: si prepara e si conclude nella pagina del colloquio. #}
+        {% include "appointments/_interview_card.html" %}
+      {% else %}
+        {# Appuntamento non collegato: resta il flusso della V1 (il colloquio richiede prima la famiglia). #}
+        <section class="card" id="preparazione">
+          <h2>Preparazione dell'incontro</h2>
+          <form method="post" action="{{ url_for('appointments.preparation', appointment_id=a.id) }}">
+            {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+            <textarea name="preparation" maxlength="8000" aria-label="Preparazione" placeholder="Cosa chiedere o mostrare, documenti da preparare…">{{ a.preparation or '' }}</textarea>
+            <div class="form-actions"><button type="submit" class="btn btn-secondary btn-small">Salva preparazione</button></div>
+          </form>
+        </section>
 
-      <section class="card" id="resoconto">
-        <h2>Resoconto della visita</h2>
-        {% if discrepancy %}
-          <div class="flash flash-warning">La visita è registrata il {{ a.visited_at|d }}, ma su Google Calendar l'evento ora è {{ when(a) }}. La data della visita non viene cambiata.</div>
-        {% endif %}
-        {% if a.updated_by and has_report %}<p class="item-meta">Ultima modifica {{ a.updated_at|dt }} ({{ a.updated_by }})</p>{% endif %}
-        <form method="post" action="{{ url_for('appointments.report', appointment_id=a.id) }}">
-          {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
-          <fieldset>
-            <legend>Esito dell'incontro</legend>
-            {% for value in outcomes %}
-              <label class="check"><input type="radio" name="visit_outcome" value="{{ value }}" {{ 'checked' if a.visit_outcome == value }}> {{ value|label }}</label>
-            {% endfor %}
-            <label class="check"><input type="radio" name="visit_outcome" value="" {{ 'checked' if not a.visit_outcome }}> <span class="muted">Non ancora registrato</span></label>
-          </fieldset>
-          <div class="form-grid">
-            <div class="field"><label for="visited_at">Data e ora effettive della visita</label>
-              <input type="datetime-local" id="visited_at" name="visited_at" value="{{ default_visited|local_input }}">
-              <span class="hint">Il calendario da solo non attesta che la famiglia sia venuta.</span></div>
-            <div class="field wide"><label for="visit_report">Sintesi: fatti e domande della famiglia</label>
-              <textarea id="visit_report" name="visit_report" maxlength="8000">{{ a.visit_report or '' }}</textarea></div>
-            <div class="field wide"><label for="local_observations">Osservazioni personali pertinenti (campo distinto)</label>
-              <textarea id="local_observations" name="local_observations" maxlength="4000">{{ a.local_observations or '' }}</textarea>
-              <span class="hint">Niente dati sensibili superflui: salute, reddito, documenti, vicende familiari.</span></div>
-          </div>
-          {% if a.family_id %}
-            <fieldset class="spaced">
-              <legend>Prossimo passo (facoltativo, salvato insieme al resoconto)</legend>
-              <input type="hidden" name="next_new_id" value="{{ new_uuid() }}">
-              <div class="form-grid">
-                <div class="field"><label for="next_action">Azione</label>
-                  <select id="next_action" name="next_action"><option value="">Nessuna</option>
-                    {% for value in followup_actions %}<option value="{{ value }}">{{ value|label }}</option>{% endfor %}</select></div>
-                <div class="field"><label for="next_due_on">Entro il</label>
-                  <input type="date" id="next_due_on" name="next_due_on" value="{{ today_iso }}"></div>
-                <div class="field wide"><label for="next_note">Nota</label>
-                  <input type="text" id="next_note" name="next_note" maxlength="2000"></div>
-              </div>
-            </fieldset>
+        <section class="card" id="resoconto">
+          <h2>Resoconto della visita</h2>
+          {% if discrepancy %}
+            <div class="flash flash-warning">La visita è registrata il {{ a.visited_at|d }}, ma su Google Calendar l'evento ora è {{ when(a) }}. La data della visita non viene cambiata.</div>
           {% endif %}
-          <div class="form-actions"><button type="submit" class="btn">Salva resoconto</button>
-            {% if a.family_id %}<a href="{{ url_for('families.detail', family_id=a.family_id) }}#offerte">Condizioni comunicate: proposte nella scheda famiglia</a>{% endif %}</div>
-        </form>
-      </section>
+          {% if a.updated_by and has_report %}<p class="item-meta">Ultima modifica {{ a.updated_at|dt }} ({{ a.updated_by }})</p>{% endif %}
+          <p class="small muted">Il colloquio strutturato si compila dopo aver collegato la famiglia.</p>
+          <form method="post" action="{{ url_for('appointments.report', appointment_id=a.id) }}">
+            {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
+            <fieldset>
+              <legend>Esito dell'incontro</legend>
+              {% for value in outcomes %}
+                <label class="check"><input type="radio" name="visit_outcome" value="{{ value }}" {{ 'checked' if a.visit_outcome == value }}> {{ value|label }}</label>
+              {% endfor %}
+              <label class="check"><input type="radio" name="visit_outcome" value="" {{ 'checked' if not a.visit_outcome }}> <span class="muted">Non ancora registrato</span></label>
+            </fieldset>
+            <div class="form-grid">
+              <div class="field"><label for="visited_at">Data e ora effettive della visita</label>
+                <input type="datetime-local" id="visited_at" name="visited_at" value="{{ default_visited|local_input }}">
+                <span class="hint">Il calendario da solo non attesta che la famiglia sia venuta.</span></div>
+              <div class="field wide"><label for="visit_report">Sintesi: fatti e domande della famiglia</label>
+                <textarea id="visit_report" name="visit_report" maxlength="8000">{{ a.visit_report or '' }}</textarea></div>
+              <div class="field wide"><label for="local_observations">Osservazioni personali pertinenti (campo distinto)</label>
+                <textarea id="local_observations" name="local_observations" maxlength="4000">{{ a.local_observations or '' }}</textarea>
+                <span class="hint">Niente dati sensibili superflui: salute, reddito, documenti, vicende familiari.</span></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn">Salva resoconto</button></div>
+          </form>
+        </section>
+      {% endif %}
 
       {% if interactions %}
         <section class="card">

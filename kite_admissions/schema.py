@@ -1,14 +1,16 @@
-"""Schema SQLite V1: sei tabelle operative e una tecnica (SPEC §8, DEC-009).
+"""Schema SQLite: sei tabelle operative e una tecnica (SPEC §8, DEC-009).
 
 La versione dello schema è in `PRAGMA user_version`; `PRAGMA application_id` identifica il file.
 I vincoli essenziali sono nel database oltre che nel server: foreign key composite
 (figlio, famiglia) impediscono collegamenti incoerenti, i trigger congelano le offerte
 comunicate e le transizioni registrate in Interaction.
+
+Versione 2 (v1.1, colloquio di ammissione): solo colonne aggiunte e trigger, nessuna tabella nuova.
 """
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 APPLICATION_ID = int.from_bytes(b"KITE", "big")
 
 TABLES = (
@@ -339,8 +341,82 @@ CREATE TABLE CalendarExclusion (
 ) STRICT, WITHOUT ROWID;
 """
 
+# v1.1 — colloquio di ammissione (SPEC §14, DEC-024): dati dell'alunno, colloquio strutturato,
+# condizione riservata dell'offerta, origine e responsabile del prossimo passo.
+MIGRATION_V2 = """
+ALTER TABLE Family ADD COLUMN contact_source_detail TEXT;
+
+ALTER TABLE StudentLead ADD COLUMN birth_date TEXT CHECK (birth_date IS NULL OR (date(birth_date) IS birth_date
+    AND (birth_year IS NULL OR birth_year = CAST(substr(birth_date, 1, 4) AS INTEGER))));
+ALTER TABLE StudentLead ADD COLUMN current_school TEXT;
+ALTER TABLE StudentLead ADD COLUMN current_grade TEXT;
+ALTER TABLE StudentLead ADD COLUMN languages TEXT NOT NULL DEFAULT '[]'
+    CHECK (json_valid(languages) AND json_type(languages) = 'array');
+ALTER TABLE StudentLead ADD COLUMN bilingual_context INTEGER
+    CHECK (bilingual_context IS NULL OR bilingual_context IN (0, 1));
+ALTER TABLE StudentLead ADD COLUMN profile_note TEXT;
+ALTER TABLE StudentLead ADD COLUMN educational_review INTEGER NOT NULL DEFAULT 0
+    CHECK (educational_review IN (0, 1));
+ALTER TABLE StudentLead ADD COLUMN educational_review_note TEXT
+    CHECK (educational_review_note IS NULL OR educational_review = 1);
+
+ALTER TABLE Appointment ADD COLUMN interview TEXT NOT NULL DEFAULT '{}'
+    CHECK (json_valid(interview) AND json_type(interview) = 'object');
+
+ALTER TABLE Offer ADD COLUMN enrollment_fee_cents INTEGER
+    CHECK (enrollment_fee_cents IS NULL OR enrollment_fee_cents >= 0);
+ALTER TABLE Offer ADD COLUMN reductions TEXT NOT NULL DEFAULT '[]'
+    CHECK (json_valid(reductions) AND json_type(reductions) = 'array');
+ALTER TABLE Offer ADD COLUMN authorized_by TEXT;
+
+-- Stesse condizioni della V1 più i campi nuovi: tutto il contenuto comunicato resta congelato.
+DROP TRIGGER trg_offer_frozen;
+CREATE TRIGGER trg_offer_frozen BEFORE UPDATE ON Offer
+WHEN OLD.status <> 'BOZZA' AND (
+       NEW.currency IS NOT OLD.currency
+    OR NEW.standard_fee_cents IS NOT OLD.standard_fee_cents
+    OR NEW.proposed_fee_cents IS NOT OLD.proposed_fee_cents
+    OR NEW.periodicity IS NOT OLD.periodicity
+    OR NEW.services IS NOT OLD.services
+    OR NEW.conditions IS NOT OLD.conditions
+    OR NEW.valid_until IS NOT OLD.valid_until
+    OR NEW.enrollment_fee_cents IS NOT OLD.enrollment_fee_cents
+    OR NEW.reductions IS NOT OLD.reductions
+    OR NEW.authorized_by IS NOT OLD.authorized_by
+    OR NEW.communicated_at IS NOT OLD.communicated_at
+    OR NEW.communicated_by IS NOT OLD.communicated_by
+    OR NEW.communication_channel IS NOT OLD.communication_channel
+    OR NEW.created_at IS NOT OLD.created_at
+    OR NEW.created_by IS NOT OLD.created_by
+    OR (OLD.status = 'RITIRATA' AND (NEW.withdrawn_at IS NOT OLD.withdrawn_at
+                                     OR NEW.withdrawal_reason IS NOT OLD.withdrawal_reason)))
+BEGIN
+    SELECT RAISE(ABORT, 'offer_frozen');
+END;
+
+ALTER TABLE FollowUp ADD COLUMN appointment_id TEXT REFERENCES Appointment (id);
+ALTER TABLE FollowUp ADD COLUMN assignee TEXT;
+CREATE INDEX ix_follow_up_appointment ON FollowUp (appointment_id);
+
+-- Il colloquio d'origine è della stessa famiglia del follow-up.
+CREATE TRIGGER trg_follow_up_appointment_family BEFORE INSERT ON FollowUp
+WHEN NEW.appointment_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM Appointment a WHERE a.id = NEW.appointment_id AND a.family_id = NEW.family_id)
+BEGIN
+    SELECT RAISE(ABORT, 'follow_up_appointment_family');
+END;
+
+-- Si fissa alla creazione; dopo si può solo azzerare («Cambia collegamento»).
+CREATE TRIGGER trg_follow_up_appointment_fixed BEFORE UPDATE OF appointment_id, family_id ON FollowUp
+WHEN NEW.appointment_id IS NOT NULL AND (NEW.appointment_id IS NOT OLD.appointment_id
+     OR NEW.family_id IS NOT OLD.family_id)
+BEGIN
+    SELECT RAISE(ABORT, 'follow_up_appointment_fixed');
+END;
+"""
+
 # Script per portare lo schema da (versione - 1) a versione. Ogni voce gira in una transazione.
-MIGRATIONS: dict[int, str] = {1: SCHEMA_V1}
+MIGRATIONS: dict[int, str] = {1: SCHEMA_V1, 2: MIGRATION_V2}
 
 # Ordine stabile delle righe per confronti e impronte (backup, ripristino, export).
 TABLE_ORDER = {

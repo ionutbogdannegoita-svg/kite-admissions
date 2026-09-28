@@ -159,9 +159,10 @@ def set_lead(db: Database, appointment_id: str, lead_id: str | None, *, revision
 
 
 def change_link(db: Database, appointment_id: str, new_family_id: str, *, revision: int, now: datetime) -> None:
-    """Sposta l'appuntamento (con il suo resoconto) su un'altra famiglia.
+    """Sposta l'appuntamento (con il suo resoconto e il colloquio) su un'altra famiglia.
 
-    Offerte e follow-up restano dove sono: non vengono trasferiti automaticamente (SPEC §5).
+    Offerte e follow-up restano dove sono: non vengono trasferiti automaticamente (SPEC §5). I
+    follow-up rimasti alla famiglia precedente si staccano da questo incontro (v1.1, §8.8).
     """
     with db.transaction():
         current = get_appointment(db, appointment_id)
@@ -170,10 +171,19 @@ def change_link(db: Database, appointment_id: str, new_family_id: str, *, revisi
             raise ValidationError("L'appuntamento è già collegato a questa famiglia.")
         family_service.get_family(db, new_family_id)
         _update_local(db, appointment_id, {"family_id": new_family_id, "student_lead_id": None}, revision, now)
+        db.execute(
+            "UPDATE FollowUp SET appointment_id = NULL, updated_at = ?, updated_by = ?, revision = revision + 1 "
+            "WHERE appointment_id = ? AND family_id IS NOT ?",
+            (stamp(now), AUTHOR, appointment_id, new_family_id))
 
 
 def has_report(appointment: Mapping[str, Any]) -> bool:
-    return bool(appointment["visit_outcome"] or appointment["visit_report"] or appointment["local_observations"])
+    """Resoconto V1 o colloquio v1.1 con contenuto: dati locali da non perdere."""
+    from .interview import has_content, loads
+
+    interview = loads(appointment["interview"]) if "interview" in appointment.keys() else {}
+    return bool(appointment["visit_outcome"] or appointment["visit_report"] or appointment["local_observations"]
+                or has_content(interview))
 
 
 def create_family_from_event(
@@ -260,21 +270,33 @@ def save_report(db: Database, appointment_id: str, values: Mapping[str, Any], *,
                 followup_id: str | None = None) -> None:
     """Resoconto della visita: fatto registrato da Ionut, mai dedotto dal calendario (SPEC §4.3).
 
-    Un eventuale prossimo passo (follow-up) si salva nella stessa transazione.
+    Un eventuale prossimo passo (follow-up) si salva nella stessa transazione e porta il legame con
+    l'incontro. Per un appuntamento collegato, il passaggio a «Visita svolta» richiede un prossimo
+    passo successivo alla visita (v1.1, OD-5): la stessa regola di «Concludi colloquio».
     """
     from . import followups as followup_service
+    from . import interview as interview_service
 
     with db.transaction():
         if followup_id and db.one("SELECT 1 FROM FollowUp WHERE id = ?", (followup_id,)):
             return  # invio ripetuto dello stesso modulo: già salvato
         current = get_appointment(db, appointment_id)
         _check_revision(current, revision)
-        _update_local(db, appointment_id, dict(values), revision, now)
+        followup = None
         if next_followup:
             if current["family_id"] is None:
                 raise ValidationError("Collega prima una famiglia per pianificare il prossimo passo.")
             followup = dict(next_followup)
             followup["student_lead_id"] = followup.get("student_lead_id") or current["student_lead_id"]
+            followup["appointment_id"] = appointment_id
+        if values.get("visit_outcome") == "SVOLTA" and current["visit_outcome"] != "SVOLTA" and current["family_id"]:
+            uncovered = interview_service.closure_coverage(
+                db, current["family_id"], appointment_id, current["student_lead_id"], visited_at=values["visited_at"],
+                new_step_leads=[followup["student_lead_id"]] if followup else [])
+            if uncovered:
+                raise ValidationError(interview_service.coverage_message(uncovered), "next_action")
+        _update_local(db, appointment_id, dict(values), revision, now)
+        if followup is not None:
             followup_service.insert_followup(db, current["family_id"], followup, followup_id=followup_id or new_id(),
                                              now=now)
 

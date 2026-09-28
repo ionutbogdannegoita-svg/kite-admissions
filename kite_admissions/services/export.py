@@ -27,7 +27,7 @@ from ..timeutil import ROME, to_iso
 OPERATIONAL_TABLES = TABLES[:6]
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 _NAME_RE = re.compile(r"^kite-admissions-export-[0-9]{8}-[0-9]{6}(-[0-9]+)?\.zip$")
-_MONEY_COLUMNS = ("standard_fee_cents", "proposed_fee_cents")
+_MONEY_COLUMNS = ("standard_fee_cents", "proposed_fee_cents", "enrollment_fee_cents")
 
 
 def safe_cell(value: Any) -> str:
@@ -90,7 +90,11 @@ def export_package(db: Database, paths: Paths, settings_data: dict[str, Any], no
                 "- CSV (separatore ';', UTF-8): una tabella operativa per file, per consultazione.\r\n"
                 "- kite-admissions.json: tutte le tabelle con ID, relazioni, versioni delle offerte, esclusioni\r\n"
                 "  Calendar e configurazione non segreta.\r\n"
-                "Orari in UTC (formato ISO). Importi in centesimi di euro; per le offerte anche in euro.\r\n"
+                "Orari in UTC (formato ISO). Importi in centesimi di euro; per le offerte anche in euro\r\n"
+                "  (retta di listino, retta finale e quota d'iscrizione).\r\n"
+                "- Colonne JSON salvate come testo: Appointment.interview (colloquio), StudentLead.languages\r\n"
+                "  (lingue dichiarate), Offer.reductions (condizione riservata), come Offer.services. I codici\r\n"
+                "  (per esempio LINGUE, FRATELLI) sono quelli delle liste del programma (catalog.py).\r\n"
                 "Contiene dati personali: conservalo con la stessa cautela del database.\r\n"
                 "Per ripristinare l'applicazione usa un backup, non questo export.\r\n").encode("utf-8"))
         os.replace(temp_name, target)

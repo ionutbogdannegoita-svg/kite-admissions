@@ -7,7 +7,7 @@
   <li>
     <div class="item-main">
       <span class="title"><a href="{{ url_for('families.detail', family_id=f.family_id) }}#follow-up">{{ f.family_name }}</a></span>
-      · {{ f.action|label }}{% if f.lead_name %} · {{ f.lead_name }}{% endif %}
+      · {{ step_label(f) }}{% if f.lead_name %} · {{ f.lead_name }}{% endif %}{% if f.assignee %} · <span class="item-meta">{{ f.assignee }}</span>{% endif %}
       {% if f.due_on < today_iso %}<span class="badge badge-scaduto">Scaduto il {{ f.due_on|d }}</span>{% else %}<span class="badge badge-info">Oggi</span>{% endif %}
       {% if f.action == 'RICHIAMARE' %}
         <div class="item-meta">{{ f.primary_adult_name or '' }} {{ f.primary_phone or f.secondary_phone or 'nessun telefono in scheda' }}</div>
@@ -50,6 +50,7 @@
                     {% if not a.src_start_at %}<span class="badge badge-warn">Orario da verificare</span>{% endif %}</div>
                 </div>
                 {% if a.visit_outcome %}<span class="badge badge-{{ a.visit_outcome|lower }}">{{ a.visit_outcome|label }}</span>{% endif %}
+                {% if a.family_id %}<a class="btn btn-small btn-secondary" href="{{ url_for('appointments.interview', appointment_id=a.id) }}">Colloquio</a>{% endif %}
               </li>
             {% endfor %}
           </ul>
@@ -103,9 +104,10 @@
         {% if view.reports_missing %}
           <ul class="item-list">
             {% for a in view.reports_missing %}
-              <li><div class="item-main"><a class="title" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#resoconto">{{ a.src_title or '(senza titolo)' }}</a>
+              {% set target = url_for('appointments.interview', appointment_id=a.id, sezione='k') if a.family_id else url_for('appointments.detail', appointment_id=a.id) ~ '#resoconto' %}
+              <li><div class="item-main"><a class="title" href="{{ target }}">{{ a.src_title or '(senza titolo)' }}</a>
                 <div class="item-meta">{{ when(a) }} · {{ link_state(a) }}</div></div>
-                <a class="btn btn-small btn-secondary" href="{{ url_for('appointments.detail', appointment_id=a.id) }}#resoconto">Resoconto</a></li>
+                <a class="btn btn-small btn-secondary" href="{{ target }}">{{ 'Registra l\'esito' if a.family_id else 'Resoconto' }}</a></li>
             {% endfor %}
           </ul>
         {% else %}<p class="empty">Nessun resoconto in sospeso.</p>{% endif %}

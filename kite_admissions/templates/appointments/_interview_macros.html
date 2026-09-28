@@ -1,0 +1,46 @@
+{# Piccoli elementi della pagina del colloquio: chip, domande guida, sezioni apribili, pulsanti. #}
+
+{% macro chips(name, entries, selected, list_name) -%}
+  {% set known = entries|map(attribute='code')|list %}
+  <div class="chips">
+    {% for entry in entries %}<label class="chip"><input type="checkbox" name="{{ name }}" value="{{ entry.code }}" {{ 'checked' if entry.code in selected }}> <span>{{ entry.label }}</span></label>{% endfor %}
+    {% for code in selected if code not in known %}<label class="chip chip-legacy"><input type="checkbox" name="{{ name }}" value="{{ code }}" checked> <span>{{ code|cat(list_name) }}</span></label>{% endfor %}
+  </div>
+{%- endmacro %}
+
+{% macro radios(name, entries, selected, list_name, empty='Non indicato') -%}
+  {% set known = entries|map(attribute='code')|list %}
+  <div class="chips">
+    <label class="chip chip-empty"><input type="radio" name="{{ name }}" value="" {{ 'checked' if not selected }}> <span>{{ empty }}</span></label>
+    {% for entry in entries %}<label class="chip"><input type="radio" name="{{ name }}" value="{{ entry.code }}" {{ 'checked' if selected == entry.code }}> <span>{{ entry.label }}</span></label>{% endfor %}
+    {% if selected and selected not in known %}<label class="chip chip-legacy"><input type="radio" name="{{ name }}" value="{{ selected }}" checked> <span>{{ selected|cat(list_name) }}</span></label>{% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro options(entries, selected, list_name, empty='—') -%}
+  {% set known = entries|map(attribute='code')|list %}
+  <option value="">{{ empty }}</option>
+  {% for entry in entries %}<option value="{{ entry.code }}" {{ 'selected' if selected == entry.code }}>{{ entry.label }}</option>{% endfor %}
+  {% if selected and selected not in known %}<option value="{{ selected }}" selected>{{ selected|cat(list_name) }}</option>{% endif %}
+{%- endmacro %}
+
+{% macro guide(questions) -%}
+  <ul class="guide">{% for question in questions %}<li>«{{ question }}»</li>{% endfor %}</ul>
+{%- endmacro %}
+
+{# Sezione A–K: <details> chiuso con una riga di sintesi; l'attributo open lo mette il server (?sezione=). #}
+{% macro section(state, open_section, extra_class='', actions=true) -%}
+  <details class="iv-section {{ extra_class }}" id="sez-{{ state.code }}" {{ 'open' if open_section == state.code }}>
+    <summary>
+      <span class="iv-letter">{{ state.code|upper }}.</span>
+      <span class="iv-title">{{ state.title }}</span>
+      {% if state.tag %}<span class="iv-tag iv-tag-{{ state.tag|lower }}">{{ 'Interno KITE — non condividere con la famiglia' if state.tag == 'Interno' else state.tag }}</span>{% endif %}
+      <span class="iv-status st-{{ state.status }}" title="{{ {'ok': 'compilata', 'todo': 'da completare', 'empty': 'vuota'}[state.status] }}">{{ state.icon }}</span>
+      <span class="iv-line">{{ state.line }}</span>
+    </summary>
+    <div class="iv-body">
+      {{ caller() }}
+      {% if actions %}<div class="form-actions iv-actions"><button type="submit" name="action" value="save:{{ state.code }}" class="btn btn-secondary btn-small">Salva</button></div>{% endif %}
+    </div>
+  </details>
+{%- endmacro %}

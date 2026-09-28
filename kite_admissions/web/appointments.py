@@ -6,13 +6,17 @@ from datetime import timedelta
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
+from .. import catalog
 from ..gcal.source import SourceError
+from ..labels import label
 from ..schema import FOLLOWUP_ACTIONS
 from ..services import appointments as appointment_service
 from ..services import calendar_import
 from ..services import families as family_service
 from ..services import followups as followup_service
+from ..services import interview as interview_service
 from ..services import leads as lead_service
+from ..services import offers as offer_service
 from ..services.common import (
     AlreadySavedError,
     NotFoundError,
@@ -27,7 +31,7 @@ from ..services.common import stamp
 from ..services.import_runner import RunnerBusy
 from ..settings import DEFAULT_FUTURE_DAYS, DEFAULT_PAST_DAYS
 from ..textutil import html_to_text
-from ..timeutil import import_window, rome_today
+from ..timeutil import format_datetime, import_window, rome_today
 from . import flash_error, flash_ok, flash_warning, get_db, state
 
 bp = Blueprint("appointments", __name__, url_prefix="/appuntamenti")
@@ -101,6 +105,8 @@ def detail(appointment_id: str):
         today_iso=rome_today(state().now()).isoformat(),
         interactions=db.all("SELECT * FROM Interaction WHERE appointment_id = ? ORDER BY occurred_at DESC, rowid DESC",
                             (appointment_id,)),
+        interview=interview_service.loads(appointment["interview"]),
+        summary=interview_service.summary(db, appointment, state().now()) if linked else None,
     )
 
 
@@ -155,9 +161,11 @@ def change_link_form(appointment_id: str):
     return render_template(
         "appointments/change_link.html", active="appointments", a=appointment, query=query, results=results,
         target=target, has_report=appointment_service.has_report(appointment),
+        has_interview=interview_service.has_content(interview_service.loads(appointment["interview"])),
         offers_count=db.scalar("SELECT count(*) FROM Offer WHERE family_id = ?", (appointment["family_id"],)),
         followups_count=db.scalar("SELECT count(*) FROM FollowUp WHERE family_id = ? AND status = 'APERTO'",
                                   (appointment["family_id"],)),
+        linked_followups=db.scalar("SELECT count(*) FROM FollowUp WHERE appointment_id = ?", (appointment_id,)),
     )
 
 
@@ -175,7 +183,8 @@ def change_link(appointment_id: str):
     except NotFoundError:
         flash_error("Famiglia non trovata.")
         return _to_detail(appointment_id)
-    flash_ok("Collegamento cambiato. Offerte e follow-up della famiglia precedente non sono stati spostati.")
+    flash_ok("Collegamento cambiato. Offerte e follow-up della famiglia precedente non sono stati spostati; "
+             "i follow-up nati da questo incontro si sono staccati dal colloquio.")
     return _to_detail(appointment_id, "#locale")
 
 
@@ -183,8 +192,8 @@ def _render_create_family(appointment, form, *, errors=None, duplicates=None, co
     return render_template(
         "appointments/create_family.html", active="appointments", a=appointment, form=form, errors=errors or [],
         duplicates=duplicates or [], contacts=appointment_service.contacts(appointment),
-        years=lead_service.school_year_options(rome_today(state().now())), grades=lead_service.GRADE_SUGGESTIONS,
-        sources=family_service.CONTACT_SOURCES,
+        years=lead_service.school_year_options(rome_today(state().now())), grades=catalog.GRADE_SUGGESTIONS,
+        sources=catalog.CONTACT_SOURCES,
     ), code
 
 
@@ -254,6 +263,114 @@ def report(appointment_id: str):
         return _to_detail(appointment_id, "#resoconto")
     flash_ok("Resoconto salvato" + (" con il prossimo passo." if next_followup else "."))
     return _to_detail(appointment_id, "#resoconto")
+
+
+def _interview_url(appointment_id: str, section: str = "") -> str:
+    return url_for("appointments.interview", appointment_id=appointment_id, sezione=section or None)
+
+
+def _render_interview(ctx, form, *, errors=(), conflicts=(), code: int = 200, section: str = ""):
+    db = get_db()
+    page = interview_service.page_data(db, ctx, form)
+    open_section = section if section in interview_service.SECTIONS else page.default_section
+    today = rome_today(ctx.now)
+    return render_template(
+        "appointments/interview.html", active="appointments", a=ctx.appointment, linked=ctx.linked, ctx=ctx,
+        family=ctx.family, form=form, page=page, errors=list(errors), conflicts=list(conflicts),
+        open_section=open_section, catalog=catalog, followup_actions=FOLLOWUP_ACTIONS,
+        years=lead_service.school_year_options(today), grades=catalog.GRADE_SUGGESTIONS,
+        current_grades=catalog.CURRENT_GRADE_SUGGESTIONS, today_iso=today.isoformat(),
+        other_rows=range(1, catalog.MAX_OTHER_LANGUAGES + 1), outcomes=appointment_service.OUTCOMES,
+        discrepancy=appointment_service.date_discrepancy(ctx.appointment),
+    ), code
+
+
+def _go_destination(ctx, action) -> str:
+    """URL della pagina V1 da aprire dopo il salvataggio, con ritorno al colloquio (salva e vai)."""
+    family_id = ctx.appointment["family_id"]
+    back = _interview_url(ctx.appointment["id"], action.section)
+    if action.target == "offer_new":
+        lead_id = None if action.arg in ("", "famiglia") else action.arg
+        if lead_id is not None and ctx.lead(lead_id) is None:
+            raise ValidationError("La richiesta scelta non appartiene a questa famiglia.")
+        return url_for("offers.create", family_id=family_id, ambito=lead_id, next=back)
+    if action.target == "offer_edit":
+        try:
+            offer = offer_service.get_offer(get_db(), action.arg, family_id)
+        except NotFoundError:
+            raise ValidationError("Proposta non trovata in questa famiglia: ricarica la pagina.") from None
+        if offer["status"] != "BOZZA":
+            raise ValidationError("La proposta è già stata comunicata: crea una nuova versione.")
+        return url_for("offers.edit", family_id=family_id, offer_id=offer["id"], next=back)
+    if action.target == "new_lead":
+        return url_for("families.create_lead", family_id=family_id, next=back)
+    return url_for("families.edit", family_id=family_id, next=back)
+
+
+@bp.route("/<appointment_id>/colloquio", methods=["GET", "POST"])
+def interview(appointment_id: str):
+    """Pagina del colloquio: Prepara incontro e sezioni A–K in un solo modulo (v1.1, SPEC §14)."""
+    _appointment_or_404(appointment_id)
+    db = get_db()
+    now = state().now()
+    ctx = interview_service.load_context(db, appointment_id, now)
+    if not ctx.linked:
+        if request.method == "POST":
+            flash_error("Collega prima l'appuntamento a una famiglia: poi si conduce il colloquio.")
+            return _to_detail(appointment_id, "#locale")
+        return render_template("appointments/interview.html", active="appointments", a=ctx.appointment,
+                               linked=False, ctx=ctx), 200
+    if request.method == "GET":
+        return _render_interview(ctx, interview_service.initial_form(db, ctx), section=request.args.get("sezione", ""))
+    form = request.form
+    action = None
+    try:
+        action = interview_service.parse_action(form.get("action"))
+        destination = _go_destination(ctx, action) if action.kind == "go" else None
+        submission = interview_service.parse_submission(form, ctx)
+        result = interview_service.save(db, appointment_id, submission, action, now)
+    except interview_service.ConflictError as exc:
+        return _render_interview(ctx, form, conflicts=exc.conflicts, code=409,
+                                 section=action.section if action else "")
+    except StaleWriteError as exc:
+        return _render_interview(ctx, form, errors=[exc.message], code=409, section=action.section if action else "")
+    except ValidationError as exc:
+        section = interview_service.section_of(exc.field) if exc.field else (action.section if action else "")
+        return _render_interview(ctx, form, errors=[exc.message], code=422, section=section)
+    if result.kept_current:
+        flash_warning("Mantenuti i valori attuali per: " + ", ".join(result.kept_current) + ".")
+    if result.repeated_conclusion:
+        flash_warning("Il colloquio risultava già concluso con questo modulo: nulla è cambiato.")
+        return _to_detail(appointment_id, "#colloquio")
+    if result.concluded:
+        outcome = request.form.get("outcome")
+        steps = len(result.followups)
+        flash_ok(f"Colloquio concluso: {label(outcome)}."
+                 + (f" {steps} {'prossimo passo creato' if steps == 1 else 'prossimi passi creati'}." if steps else ""))
+        return _to_detail(appointment_id, "#colloquio")
+    if action.kind == "offer_communicate":
+        offer = offer_service.get_offer(db, result.offer_id)
+        if result.offer_changed:
+            flash_ok(f"Colloquio salvato. Proposta v{offer['version_no']} segnata come comunicata il "
+                     f"{format_datetime(offer['communicated_at'])}: il contenuto ora è congelato.")
+        else:
+            flash_warning(f"La proposta v{offer['version_no']} risultava già comunicata il "
+                          f"{format_datetime(offer['communicated_at'])}: nulla è cambiato.")
+        return redirect(_interview_url(appointment_id, "i"))
+    if action.kind == "offer_version":
+        if result.offer_changed:
+            flash_ok("Colloquio salvato. Nuova versione creata come bozza: la proposta comunicata resta la corrente "
+                     "finché non comunichi questa.")
+        else:
+            flash_warning("Esiste già una bozza in questo ambito: modifica quella.")
+        return redirect(url_for("offers.edit", family_id=ctx.appointment["family_id"], offer_id=result.offer_id,
+                                next=_interview_url(appointment_id, "i")))
+    if destination is not None:
+        if result.written:
+            flash_ok("Colloquio salvato.")
+        return redirect(destination)
+    flash_ok("Colloquio salvato." if result.written else "Nessuna modifica da salvare.")
+    return redirect(_interview_url(appointment_id, action.section))
 
 
 @bp.post("/<appointment_id>/rimuovi")

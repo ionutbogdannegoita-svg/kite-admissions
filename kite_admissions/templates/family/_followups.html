@@ -13,7 +13,9 @@
             {% if f.due_on < today %}<span class="badge badge-scaduto">Scaduto il {{ f.due_on|d }}</span>
             {% elif f.due_on == today %}<span class="badge badge-info">Oggi</span>
             {% else %}<span class="item-meta">entro il {{ f.due_on|dw }}</span>{% endif %}
+            {% if f.assignee %}<span class="item-meta"> · {{ f.assignee }}</span>{% endif %}
             {% if f.note %}<div class="item-meta">{{ f.note }}</div>{% endif %}
+            {% if f.appointment_id %}<div class="item-meta">Dal <a href="{{ url_for('appointments.detail', appointment_id=f.appointment_id) }}#colloquio">colloquio del {{ (f.origin_start_at or f.origin_start_date)|rd }}</a></div>{% endif %}
           </div>
           <div class="item-side">
             <form method="post" action="{{ url_for('followups.complete', family_id=family.id, followup_id=f.id) }}" class="actions">
@@ -53,6 +55,9 @@
           <div class="field"><label for="fu_lead">Riguarda</label>
             <select id="fu_lead" name="student_lead_id"><option value="">Tutta la famiglia</option>
               {% for lead in leads %}{% if lead.status in ['IN_CORSO', 'IN_PAUSA'] %}<option value="{{ lead.id }}">{{ lead.display_name }}</option>{% endif %}{% endfor %}</select></div>
+          <div class="field"><label for="fu_assignee">Responsabile</label>
+            <input type="text" id="fu_assignee" name="assignee" list="fu_assignees" maxlength="120" placeholder="vuoto = Ionut">
+            <datalist id="fu_assignees">{% for name in assignee_suggestions %}<option value="{{ name }}">{% endfor %}</datalist></div>
           <div class="field wide"><label for="fu_note">Nota</label>
             <input type="text" id="fu_note" name="note" maxlength="2000" placeholder="Obbligatoria per «Altro»"></div>
         </div>
@@ -67,7 +72,7 @@
       <div class="panel-body">
         <ul class="item-list">
           {% for f in closed_followups %}
-            <li><div class="item-main">{{ f.action|label }} <span class="badge badge-{{ f.status|lower }}">{{ f.status|label }} il {{ f.closed_on|d }}</span>
+            <li><div class="item-main">{{ f.action|label }} <span class="badge badge-{{ f.status|lower }}">{{ f.status|label }} il {{ f.closed_on|d }}</span>{% if f.assignee %} <span class="item-meta">· {{ f.assignee }}</span>{% endif %}
               <div class="item-meta">{{ f.outcome or ('esito non indicato' if f.status == 'COMPLETATO' else '') }}{% if f.note %} · {{ f.note }}{% endif %}</div></div></li>
           {% endfor %}
         </ul>

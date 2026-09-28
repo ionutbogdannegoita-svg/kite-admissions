@@ -172,7 +172,12 @@ def restore(
             raise RestoreError("Verifica dopo il ripristino fallita: i dati non corrispondono al backup scelto.")
         report.counts = {table: info["count"] for table, info in digests.items()}
         if restored.status == "needs_migration":
-            dbmod.migrate(paths.db_path, preop_backup)
+            try:
+                dbmod.migrate(paths.db_path, preop_backup)
+            except (backups.BackupError, dbmod.DatabaseError, sqlite3.Error, OSError) as exc:
+                # Senza schema aggiornato l'app non può riprendere: modalità ripristino, non esito positivo.
+                raise RestoreError("Verifica dopo il ripristino fallita: aggiornamento dello schema "
+                                   f"del backup non riuscito ({exc}).") from exc
             report.migrated = True
 
         after = _family_labels(paths.db_path) or {}

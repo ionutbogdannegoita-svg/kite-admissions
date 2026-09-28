@@ -1,0 +1,99 @@
+{# Prepara incontro: quasi tutto calcolato dalle tabelle; si scrivono solo tipo, ambito e nota di preparazione. #}
+{% from "_macros.html" import lead_badge %}
+{% from "appointments/_interview_lead_fields.html" import age_line %}
+{% from "appointments/_interview_macros.html" import options %}
+{% set prep = page.prepare %}
+<details class="iv-section iv-prepare" id="sez-prepara" {{ 'open' if open_section == 'prepara' }}>
+  <summary>
+    <span class="iv-title">Prepara incontro</span>
+    <span class="iv-line">{{ family.display_name }} · {{ prep.adults }} {{ 'adulto' if prep.adults == 1 else 'adulti' }} · telefono {{ '✓' if prep.phone else '—' }} · email {{ '✓' if prep.email else '—' }}{% if prep.to_ask %} · <strong>{{ prep.to_ask|length }} da chiedere</strong>{% endif %}</span>
+  </summary>
+  <div class="iv-body">
+    <div class="form-grid">
+      <div class="field"><label for="kind">Tipo di incontro</label>
+        <select id="kind" name="kind">{{ options(catalog.MEETING_KINDS, form.get('kind'), 'MEETING_KINDS', 'Non indicato') }}</select></div>
+      <div class="field"><label for="student_lead_id">L'incontro riguarda</label>
+        <select id="student_lead_id" name="student_lead_id">
+          <option value="">Tutta la famiglia (ogni richiesta aperta)</option>
+          {% for lead in ctx.leads %}<option value="{{ lead.id }}" {{ 'selected' if form.get('student_lead_id') == lead.id }}>{{ lead.display_name }} · {{ lead.school_year or 'anno non indicato' }} · {{ lead.status|label }}</option>{% endfor %}
+        </select>
+        <span class="hint">Cambiando la scelta, dopo il salvataggio compaiono i blocchi degli alunni giusti.</span></div>
+    </div>
+
+    <div class="prep-grid">
+      <div>
+        <h3>Famiglia</h3>
+        <p class="small">{{ family.display_name }} · {{ prep.adults }} {{ 'adulto' if prep.adults == 1 else 'adulti' }} · telefono {{ '✓' if prep.phone else '—' }} · email {{ '✓' if prep.email else '—' }}
+          {% if family.contact_source %} · fonte: {{ family.contact_source }}{% if family.contact_source_detail %} ({{ family.contact_source_detail }}){% endif %}{% endif %}
+          {% if family.first_contact_on %} · dal {{ family.first_contact_on|d }}{% endif %}</p>
+        {% if family.preliminary_notes %}<p class="small pre">Note preliminari: «{{ family.preliminary_notes }}»</p>{% endif %}
+        <button type="submit" name="action" value="go:edit_family" class="btn btn-quiet btn-small">Salva e modifica i dati della famiglia</button>
+
+        <h3>Alunni dell'incontro</h3>
+        {% for index, lead in page.leads %}
+          <p class="small"><strong>{{ lead.display_name }}</strong> {{ lead_badge(lead.status) }}
+            {% if lead.educational_review %}<span class="badge badge-review">Approfondimento</span>{% endif %}<br>
+            {% if lead.birth_date %}nato/a il {{ lead.birth_date|d }} · {% elif lead.birth_year %}nato/a nel {{ lead.birth_year }} · {% endif %}{{ age_line(page.ages[lead.id]) }}
+            {{ [lead.grade, lead.school_year]|select|join(' ') }}{% if lead.current_school or lead.current_grade %} · ora: {{ [lead.current_school, lead.current_grade]|select|join(' · ') }}{% endif %}</p>
+        {% else %}
+          <p class="empty">Nessuna richiesta aperta per questo incontro.</p>
+        {% endfor %}
+        {% if page.siblings %}
+          <h3>Fratelli e sorelle</h3>
+          <ul class="small">{% for lead in page.siblings %}<li>{{ lead.display_name }} · {{ [lead.grade, lead.school_year]|select|join(' ') or 'anno non indicato' }} · {{ lead.status|label }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+      <div>
+        <h3>Incontri precedenti</h3>
+        {% if prep.previous %}
+          <ul class="small">
+            {% for item in prep.previous %}
+              <li><a href="{{ url_for('appointments.detail', appointment_id=item.row.id) }}#colloquio">{{ (item.row.visited_at or item.row.src_start_at or item.row.src_start_date)|rd }}</a>
+                · {{ item.content.kind|cat('MEETING_KINDS') or 'Incontro' }}{% if item.row.visit_outcome %} · {{ item.row.visit_outcome|label }}{% endif %}
+                {% if item.content.assessment and item.content.assessment.interest %} · interesse {{ item.content.assessment.interest|cat('INTEREST_LEVELS')|lower }}{% endif %}
+                {% if item.content.assessment and item.content.assessment.obstacle %} · ostacolo {{ item.content.assessment.obstacle|cat('OBSTACLES')|lower }}{% endif %}
+                {% for step in item.steps %}<br>→ {{ step_label(step) }} entro {{ step.due_on|d }} · {{ step.status|label }}{% endfor %}</li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Nessuno.</p>{% endif %}
+
+        <h3>Proposte</h3>
+        {% if prep.offers %}
+          <ul class="small">
+            {% for scope in prep.offers %}
+              <li>{{ scope.heading }}:
+                {% if scope.current %}v{{ scope.current.version_no }} comunicata il {{ scope.current.communicated_at|rd }} · finale {{ scope.current.proposed_fee_cents|euro }} {{ scope.current.periodicity|label }}{% if scope.current.valid_until %} · valida fino al {{ scope.current.valid_until|d }}{% endif %}{% else %}nessuna corrente{% endif %}
+                {% if scope.draft %} · bozza v{{ scope.draft.version_no }}{% endif %} · {{ scope.versions|length }} {{ 'versione' if scope.versions|length == 1 else 'versioni' }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Nessuna.</p>{% endif %}
+
+        <h3>Follow-up aperti</h3>
+        {% if prep.followups %}
+          <ul class="small">
+            {% for f in prep.followups %}
+              <li>{{ step_label(f) }} entro {{ f.due_on|d }}{% if f.lead_name %} · {{ f.lead_name }}{% endif %}{% if f.assignee %} · {{ f.assignee }}{% endif %}
+                {% if f.appointment_id %} · dal colloquio del {{ (f.origin_start_at or f.origin_start_date)|rd }}{% endif %}{% if f.note and not f.note.startswith(wait_note) %} · {{ f.note }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+        {% else %}<p class="empty">Nessuno.</p>{% endif %}
+
+        {% if prep.notes %}
+          <h3>Ultime note</h3>
+          <ul class="small">{% for note in prep.notes %}<li>{{ note.type|label }} {{ note.occurred_at|rd }}: «{{ note.text|truncate(140) }}»</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="to-ask">
+      <h3>Da chiedere o confermare</h3>
+      {% if prep.to_ask %}
+        <ul class="ask-list">{% for item in prep.to_ask %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% else %}<p class="small muted">Nulla di essenziale manca.</p>{% endif %}
+    </div>
+
+    <div class="field wide"><label for="preparation">Nota di preparazione</label>
+      <textarea id="preparation" name="preparation" maxlength="8000" placeholder="cosa mostrare, cosa chiedere, documenti da preparare…">{{ form.get('preparation', '') }}</textarea></div>
+    <div class="form-actions iv-actions"><button type="submit" name="action" value="save:prepara" class="btn btn-secondary btn-small">Salva</button></div>
+  </div>
+</details>

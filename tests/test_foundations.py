@@ -11,7 +11,7 @@ import pytest
 from kite_admissions import db as dbmod
 from kite_admissions.app import create_app
 from kite_admissions.paths import Paths
-from kite_admissions.schema import APPLICATION_ID, SCHEMA_V1, SCHEMA_VERSION, TABLES
+from kite_admissions.schema import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION, TABLES
 from kite_admissions.services import backups
 
 from .conftest import PORT
@@ -65,7 +65,7 @@ def test_fresh_start_creates_exactly_seven_tables(app, conn):
         "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")}
     assert tables == set(TABLES)
     assert len(TABLES) == 7
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 1
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 2
     assert conn.execute("PRAGMA application_id").fetchone()[0] == APPLICATION_ID
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert app.extensions["kite"].recovery is None
@@ -276,15 +276,19 @@ def test_missing_database_with_backups_does_not_silently_start_empty(make_app, h
     assert not state.paths.db_path.exists()
 
 
-def _patch_v2(monkeypatch, script):
-    monkeypatch.setattr(dbmod, "SCHEMA_VERSION", 2)
-    monkeypatch.setattr(dbmod, "MIGRATIONS", {1: SCHEMA_V1, 2: script})
+NEXT = SCHEMA_VERSION + 1
+
+
+def _patch_next(monkeypatch, script):
+    """Una versione successiva finta, sopra lo schema corrente."""
+    monkeypatch.setattr(dbmod, "SCHEMA_VERSION", NEXT)
+    monkeypatch.setattr(dbmod, "MIGRATIONS", {**MIGRATIONS, NEXT: script})
 
 
 def test_migration_requires_successful_preoperation_backup(tmp_path, monkeypatch):
     path = tmp_path / "db.sqlite3"
     dbmod.initialize(path)
-    _patch_v2(monkeypatch, "CREATE INDEX ix_prova ON Family (contact_source);")
+    _patch_next(monkeypatch, "CREATE INDEX ix_prova ON Family (contact_source);")
 
     def failing_backup():
         raise backups.BackupError("disco pieno (simulato)")
@@ -292,7 +296,7 @@ def test_migration_requires_successful_preoperation_backup(tmp_path, monkeypatch
     with pytest.raises(backups.BackupError):
         dbmod.migrate(path, failing_backup)
     conn = sqlite3.connect(path)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     assert conn.execute("SELECT count(*) FROM sqlite_schema WHERE name = 'ix_prova'").fetchone()[0] == 0
     conn.close()
 
@@ -300,18 +304,18 @@ def test_migration_requires_successful_preoperation_backup(tmp_path, monkeypatch
     assert dbmod.migrate(path, lambda: calls.append("backup")) == 1
     assert calls == ["backup"]
     conn = sqlite3.connect(path)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == NEXT
     conn.close()
 
 
 def test_failed_migration_script_leaves_database_unchanged(tmp_path, monkeypatch):
     path = tmp_path / "db.sqlite3"
     dbmod.initialize(path)
-    _patch_v2(monkeypatch, "CREATE INDEX ix_ok ON Family (contact_source); CREATE INDEX ix_ko ON Tabella_Inesistente (x);")
+    _patch_next(monkeypatch, "CREATE INDEX ix_ok ON Family (contact_source); CREATE INDEX ix_ko ON Tabella_Inesistente (x);")
     with pytest.raises(sqlite3.Error):
         dbmod.migrate(path, lambda: None)
     conn = sqlite3.connect(path)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     assert conn.execute("SELECT count(*) FROM sqlite_schema WHERE name = 'ix_ok'").fetchone()[0] == 0
     conn.close()
 
@@ -319,13 +323,13 @@ def test_failed_migration_script_leaves_database_unchanged(tmp_path, monkeypatch
 def test_app_start_migrates_with_preoperation_backup(make_app, monkeypatch):
     first = make_app()
     paths = first.extensions["kite"].paths
-    _patch_v2(monkeypatch, "CREATE INDEX ix_prova ON Family (contact_source);")
-    monkeypatch.setattr(backups, "SCHEMA_VERSION", 2)
+    _patch_next(monkeypatch, "CREATE INDEX ix_prova ON Family (contact_source);")
+    monkeypatch.setattr(backups, "SCHEMA_VERSION", NEXT)
     second = make_app()
     assert second.extensions["kite"].recovery is None
     preop = list(paths.preop_backups_dir.glob("*.zip"))
     assert len(preop) == 1 and "pre-migrazione" in preop[0].name
-    assert backups.read_manifest(preop[0])["schema_version"] == 1
+    assert backups.read_manifest(preop[0])["schema_version"] == SCHEMA_VERSION
 
 
 def test_backup_is_consistent_while_database_is_in_use(app):
@@ -346,7 +350,7 @@ def test_backup_is_consistent_while_database_is_in_use(app):
 
 def test_health_endpoint(client):
     data = client.get("/health").get_json()
-    assert data == {"app": "kite-admissions", "version": "1.0.0", "status": "ok", "schema_version": 1}
+    assert data == {"app": "kite-admissions", "version": "1.1.0", "status": "ok", "schema_version": 2}
 
 
 def test_views_render(client):

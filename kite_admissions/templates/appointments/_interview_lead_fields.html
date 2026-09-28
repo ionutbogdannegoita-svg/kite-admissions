@@ -1,0 +1,93 @@
+{# Campi dell'alunno (StudentLead), condivisi dal modulo della richiesta e dal colloquio (prefisso per figlio). #}
+
+{% macro age_line(info) -%}
+  {%- if info -%}
+    {%- if info.approximate -%}circa {{ info.age_today }} anni (solo l'anno di nascita)
+    {%- else -%}{{ info.age_today }} anni{% if info.age_at_deadline is not none %} ({{ info.age_at_deadline }} al {{ info.deadline.strftime('%d/%m/%Y') }}){% endif %}{%- endif -%}
+    {%- if info.status %} <span class="badge badge-age-{{ info.status|lower }}" title="Verifica informativa: non blocca la pratica">{{ info.message }}</span>{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro identity_fields(form, prefix, years, grades, current_grades, today, errors_for=none) -%}
+  <div class="form-grid">
+    <div class="field"><label for="{{ prefix }}display_name" class="required">Nome e cognome (o riferimento provvisorio)</label>
+      <input type="text" id="{{ prefix }}display_name" name="{{ prefix }}display_name" value="{{ form.get(prefix ~ 'display_name') or '' }}" required maxlength="200"></div>
+    <div class="field"><label for="{{ prefix }}birth_date">Data di nascita</label>
+      <input type="date" id="{{ prefix }}birth_date" name="{{ prefix }}birth_date" value="{{ form.get(prefix ~ 'birth_date') or '' }}" min="1990-01-01" max="{{ today }}">
+      <span class="hint">Facoltativa: serve per età e verifica dei requisiti (informativa).</span></div>
+    {% if not form.get(prefix ~ 'birth_date') %}
+      <div class="field"><label for="{{ prefix }}birth_year">Solo l'anno di nascita</label>
+        <input type="number" id="{{ prefix }}birth_year" name="{{ prefix }}birth_year" value="{{ form.get(prefix ~ 'birth_year') or '' }}" min="1990" max="2100">
+        <span class="hint">Se non conosci la data completa.</span></div>
+    {% else %}<input type="hidden" name="{{ prefix }}birth_year" value="{{ form.get(prefix ~ 'birth_year') or '' }}">{% endif %}
+    <div class="field"><label for="{{ prefix }}school_year">Anno scolastico richiesto</label>
+      <select id="{{ prefix }}school_year" name="{{ prefix }}school_year">
+        <option value="">Non indicato</option>
+        {% for year in years %}<option value="{{ year }}" {{ 'selected' if form.get(prefix ~ 'school_year') == year }}>{{ year }}</option>{% endfor %}
+        {% if form.get(prefix ~ 'school_year') and form.get(prefix ~ 'school_year') not in years %}<option value="{{ form.get(prefix ~ 'school_year') }}" selected>{{ form.get(prefix ~ 'school_year') }}</option>{% endif %}
+      </select></div>
+    <div class="field"><label for="{{ prefix }}grade">Classe richiesta</label>
+      <input type="text" id="{{ prefix }}grade" name="{{ prefix }}grade" value="{{ form.get(prefix ~ 'grade') or '' }}" list="{{ prefix }}grades" maxlength="80">
+      <datalist id="{{ prefix }}grades">{% for grade in grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
+    <div class="field"><label for="{{ prefix }}current_school">Scuola attuale</label>
+      <input type="text" id="{{ prefix }}current_school" name="{{ prefix }}current_school" value="{{ form.get(prefix ~ 'current_school') or '' }}" maxlength="200" placeholder="nome della scuola o del nido"></div>
+    <div class="field"><label for="{{ prefix }}current_grade">Classe attuale</label>
+      <input type="text" id="{{ prefix }}current_grade" name="{{ prefix }}current_grade" value="{{ form.get(prefix ~ 'current_grade') or '' }}" list="{{ prefix }}current-grades" maxlength="80">
+      <datalist id="{{ prefix }}current-grades">{% for grade in current_grades %}<option value="{{ grade }}">{% endfor %}</datalist></div>
+    <div class="field"><label for="{{ prefix }}origin">Città o zona di provenienza</label>
+      <input type="text" id="{{ prefix }}origin" name="{{ prefix }}origin" value="{{ form.get(prefix ~ 'origin') or '' }}" maxlength="200"></div>
+  </div>
+{%- endmacro %}
+
+{% macro language_fields(form, prefix, languages, levels, other_rows) -%}
+  <p class="hint">Livelli dichiarati dalla famiglia: non sono una valutazione linguistica né una certificazione.</p>
+  <div class="form-grid">
+    {% for language in languages %}
+      <div class="field"><label for="{{ prefix }}lang_{{ language.code }}">{{ language.label }}</label>
+        <select id="{{ prefix }}lang_{{ language.code }}" name="{{ prefix }}lang_{{ language.code }}">
+          <option value="">—</option>
+          {% for level in levels %}<option value="{{ level.code }}" {{ 'selected' if form.get(prefix ~ 'lang_' ~ language.code) == level.code }}>{{ level.label }}</option>{% endfor %}
+          {% set current = form.get(prefix ~ 'lang_' ~ language.code) %}
+          {% if current and current not in levels|map(attribute='code')|list %}<option value="{{ current }}" selected>{{ current|cat('LANGUAGE_LEVELS') }}</option>{% endif %}
+        </select></div>
+    {% endfor %}
+    {# Lingue salvate e poi tolte dal catalogo: restano visibili e si possono solo togliere. #}
+    {% set known = languages|map(attribute='code')|list %}
+    {% set start = (prefix ~ 'lang_')|length %}
+    {% for key in form.keys()|sort if key.startswith(prefix ~ 'lang_') and key[start:] not in known and form.get(key) %}
+      <div class="field"><label for="{{ key }}">{{ key[start:] }} (voce non più in elenco)</label>
+        <select id="{{ key }}" name="{{ key }}">
+          <option value="">— (togli)</option>
+          {% for level in levels %}<option value="{{ level.code }}" {{ 'selected' if form.get(key) == level.code }}>{{ level.label }}</option>{% endfor %}
+          {% if form.get(key) not in levels|map(attribute='code')|list %}<option value="{{ form.get(key) }}" selected>{{ form.get(key)|cat('LANGUAGE_LEVELS') }}</option>{% endif %}
+        </select></div>
+    {% endfor %}
+    {% for index in other_rows %}
+      <div class="field"><label for="{{ prefix }}other_lang_{{ index }}_name">Altra lingua {{ index }}</label>
+        <input type="text" id="{{ prefix }}other_lang_{{ index }}_name" name="{{ prefix }}other_lang_{{ index }}_name" value="{{ form.get(prefix ~ 'other_lang_' ~ index ~ '_name') or '' }}" maxlength="40">
+        <select name="{{ prefix }}other_lang_{{ index }}_level" aria-label="Livello altra lingua {{ index }}">
+          <option value="">—</option>
+          {% for level in levels %}<option value="{{ level.code }}" {{ 'selected' if form.get(prefix ~ 'other_lang_' ~ index ~ '_level') == level.code }}>{{ level.label }}</option>{% endfor %}
+          {% set current = form.get(prefix ~ 'other_lang_' ~ index ~ '_level') %}
+          {% if current and current not in levels|map(attribute='code')|list %}<option value="{{ current }}" selected>{{ current|cat('LANGUAGE_LEVELS') }}</option>{% endif %}
+        </select></div>
+    {% endfor %}
+    <div class="field"><label for="{{ prefix }}bilingual_context">Contesti bilingui o internazionali già frequentati</label>
+      <select id="{{ prefix }}bilingual_context" name="{{ prefix }}bilingual_context">
+        <option value="" {{ 'selected' if not form.get(prefix ~ 'bilingual_context') }}>Non so</option>
+        <option value="1" {{ 'selected' if form.get(prefix ~ 'bilingual_context') in ('1', 1) }}>Sì</option>
+        <option value="0" {{ 'selected' if form.get(prefix ~ 'bilingual_context') in ('0', 0) }}>No</option>
+      </select></div>
+  </div>
+{%- endmacro %}
+
+{% macro profile_fields(form, prefix) -%}
+  <div class="field wide"><label for="{{ prefix }}profile_note">Profilo scolastico dichiarato dalla famiglia</label>
+    <textarea id="{{ prefix }}profile_note" name="{{ prefix }}profile_note" maxlength="500" placeholder="come vive la scuola, attività o materie preferite, aree in cui la famiglia chiede più attenzione">{{ form.get(prefix ~ 'profile_note') or '' }}</textarea>
+    <span class="hint">Riassumi in modo neutro interessi e andamento. Diagnosi, certificazioni, terapie e dettagli sulla salute <strong>non si scrivono, nemmeno se la famiglia li cita</strong>: in quel caso spunta «Approfondimento» e annota solo l'azione. Le valutazioni KITE vanno nella valutazione interna.</span></div>
+  <label class="check"><input type="checkbox" name="{{ prefix }}educational_review" value="1" {{ 'checked' if form.get(prefix ~ 'educational_review') in ('1', 1) }}>
+    <span><strong>Approfondimento educativo/documentale necessario</strong></span></label>
+  <div class="field wide" data-show-when="{{ prefix }}educational_review=1"><label for="{{ prefix }}educational_review_note">Nota operativa (azione da fare)</label>
+    <input type="text" id="{{ prefix }}educational_review_note" name="{{ prefix }}educational_review_note" value="{{ form.get(prefix ~ 'educational_review_note') or '' }}" maxlength="300" placeholder="es. colloquio con il coordinamento didattico prima dell'inserimento">
+    <span class="hint">Indica solo l'azione: nessuna diagnosi, certificazione o dettaglio clinico.</span></div>
+{%- endmacro %}

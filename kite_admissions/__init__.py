@@ -1,6 +1,6 @@
 """KITE Admissions: CRM locale per le ammissioni della Latina International School."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 APP_NAME = "KITE Admissions"
 APP_ID = "kite-admissions"

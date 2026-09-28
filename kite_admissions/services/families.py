@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Mapping
 
-from .. import AUTHOR
+from .. import AUTHOR, catalog
 from ..db import Database, fold
 from ..textutil import escape_like, normalize_email, normalize_phone, phone_digits, similar_labels
 from .common import AlreadySavedError, NotFoundError, StaleWriteError, ValidationError, clean, stamp
@@ -22,10 +22,10 @@ FAMILY_FIELDS = (
     "secondary_phone",
     "secondary_email",
     "contact_source",
+    "contact_source_detail",
     "first_contact_on",
     "preliminary_notes",
 )
-CONTACT_SOURCES = ("Passaparola", "Sito web", "Social", "Open day", "Telefonata", "Email", "Segreteria", "Altro")
 
 
 @dataclass
@@ -74,8 +74,19 @@ def parse_date_field(form: Mapping[str, Any], name: str, label: str) -> str | No
         raise ValidationError(f"{label}: data non valida.", name) from None
 
 
-def parse_family(form: Mapping[str, Any]) -> dict[str, Any]:
-    """Valori della famiglia dal modulo, validati. Recapiti mancanti ammessi (SPEC §3)."""
+def check_contact_source(value: Any, current: str | None = None) -> str | None:
+    """Fonte del contatto dalla lista chiusa (OD-7); un valore V1 già salvato si conserva così com'è."""
+    source = clean(value, 120)
+    if source is not None and source not in catalog.CONTACT_SOURCES and source != current:
+        raise ValidationError("Fonte del contatto: scegli una voce dell'elenco.", "contact_source")
+    return source
+
+
+def parse_family(form: Mapping[str, Any], current: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Valori della famiglia dal modulo, validati. Recapiti mancanti ammessi (SPEC §3).
+
+    `current` è la riga attuale in modifica: serve a conservare una fonte V1 fuori dalla nuova lista.
+    """
     display_name = clean(form.get("display_name"), 200)
     if display_name is None:
         raise ValidationError("L'etichetta della famiglia è obbligatoria (es. «Famiglia Rossi»).", "display_name")
@@ -86,7 +97,12 @@ def parse_family(form: Mapping[str, Any]) -> dict[str, Any]:
     values["secondary_adult_name"] = clean(form.get("secondary_adult_name"), 200)
     values["secondary_phone"], values["secondary_phone_norm"] = _phone(form, "secondary_phone")
     values["secondary_email"], values["secondary_email_norm"] = _email(form, "secondary_email")
-    values["contact_source"] = clean(form.get("contact_source"), 120)
+    values["contact_source"] = check_contact_source(form.get("contact_source"),
+                                                    current["contact_source"] if current else None)
+    try:
+        values["contact_source_detail"] = clean(form.get("contact_source_detail"), 200)
+    except ValidationError:
+        raise ValidationError("Dettaglio della fonte: massimo 200 caratteri.", "contact_source_detail") from None
     values["first_contact_on"] = parse_date_field(form, "first_contact_on", "Data primo contatto")
     values["preliminary_notes"] = clean(form.get("preliminary_notes"), 4000)
     return values
@@ -224,6 +240,26 @@ def update_family(
             raise StaleWriteError()
 
 
+def update_contact_source(db: Database, family_id: str, source: str | None, detail: str | None, *,
+                          revision: int, now: datetime) -> int:
+    """Fonte del contatto aggiornata dal colloquio: solo fonte e dettaglio.
+
+    Etichetta e recapiti non cambiano, quindi niente controllo dei doppioni. Restituisce la nuova revisione.
+    """
+    with db.transaction():
+        current = get_family(db, family_id)
+        if current["revision"] != revision:
+            raise StaleWriteError()
+        cursor = db.execute(
+            "UPDATE Family SET contact_source = ?, contact_source_detail = ?, updated_at = ?, updated_by = ?, "
+            "revision = revision + 1 WHERE id = ? AND revision = ?",
+            (source, detail, stamp(now), AUTHOR, family_id, revision),
+        )
+        if cursor.rowcount != 1:
+            raise StaleWriteError()
+    return revision + 1
+
+
 def set_archived(db: Database, family_id: str, archived: bool, *, now: datetime) -> bool:
     """Archiviazione reversibile: nasconde dai flussi attivi senza perdere lo storico (SPEC §9.4)."""
     with db.transaction():
@@ -238,15 +274,19 @@ def set_archived(db: Database, family_id: str, archived: bool, *, now: datetime)
 
 
 def dossier_counts(db: Database, family_id: str) -> dict[str, int]:
-    """Quanti dati locali coinvolge l'eliminazione definitiva (SPEC §9.4)."""
-    appointment_ids = [row[0] for row in db.all("SELECT id FROM Appointment WHERE family_id = ?", (family_id,))]
+    """Quanti dati locali coinvolge l'eliminazione definitiva (SPEC §9.4).
+
+    «Resoconti» conta anche i colloqui v1.1 con contenuto e senza esito.
+    """
+    from .appointments import has_report  # import locale: evita il ciclo tra moduli
+
+    appointments = db.all("SELECT * FROM Appointment WHERE family_id = ?", (family_id,))
+    appointment_ids = [row["id"] for row in appointments]
     marks = ", ".join("?" for _ in appointment_ids) or "NULL"
     return {
         "richieste": db.scalar("SELECT count(*) FROM StudentLead WHERE family_id = ?", (family_id,)),
         "appuntamenti": len(appointment_ids),
-        "resoconti": db.scalar(
-            "SELECT count(*) FROM Appointment WHERE family_id = ? AND (visit_outcome IS NOT NULL "
-            "OR visit_report IS NOT NULL OR local_observations IS NOT NULL)", (family_id,)),
+        "resoconti": sum(1 for row in appointments if has_report(row)),
         "offerte": db.scalar("SELECT count(*) FROM Offer WHERE family_id = ?", (family_id,)),
         "follow-up": db.scalar("SELECT count(*) FROM FollowUp WHERE family_id = ?", (family_id,)),
         "attività in cronologia": db.scalar(

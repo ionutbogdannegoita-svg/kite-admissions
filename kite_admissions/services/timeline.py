@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .. import catalog
 from ..db import Database
 from ..labels import euro, label
 from ..timeutil import format_date
@@ -36,6 +37,32 @@ def _offer_scope(row: Any) -> str:
     return f" per {row['lead_name']}" if row["lead_name"] else " per la famiglia"
 
 
+def _report_item(db: Database, row: Any) -> TimelineItem:
+    """Voce «Resoconto»: per un colloquio v1.1 titolo «Colloquio · tipo: esito» e dettaglio
+    «interesse · ostacolo · prossimi passi»; per un resoconto V1 resta l'estratto della sintesi."""
+    from . import interview as interview_service
+
+    content = interview_service.content_of(interview_service.loads(row["interview"]))
+    link = f"/appuntamenti/{row['id']}#colloquio"
+    at = row["visited_at"] or row["updated_at"]
+    if not content:
+        return TimelineItem(at, "Resoconto", label(row["visit_outcome"]), (row["visit_report"] or "")[:240], link,
+                            row["updated_by"])
+    kind = catalog.label(catalog.MEETING_KINDS, content.get("kind"))
+    title = f"Colloquio · {kind}: {label(row['visit_outcome'])}" if kind else f"Colloquio: {label(row['visit_outcome'])}"
+    assessment = content.get("assessment") or {}
+    parts = []
+    if assessment.get("interest"):
+        parts.append("interesse " + catalog.label(catalog.INTEREST_LEVELS, assessment["interest"]).lower())
+    if assessment.get("obstacle"):
+        parts.append("ostacolo " + catalog.label(catalog.OBSTACLES, assessment["obstacle"]).lower())
+    steps = [f"{interview_service.step_label(step)} entro il {format_date(step['due_on'])}"
+             for step in interview_service.meeting_followups(db, row["id"])]
+    if steps:
+        parts.append("prossimi passi: " + ", ".join(steps))
+    return TimelineItem(at, "Resoconto", title, " · ".join(parts), link, row["updated_by"])
+
+
 def family_timeline(db: Database, family_id: str) -> list[TimelineItem]:
     items: list[TimelineItem] = []
     family = db.one("SELECT first_contact_on, contact_source FROM Family WHERE id = ?", (family_id,))
@@ -51,10 +78,7 @@ def family_timeline(db: Database, family_id: str) -> list[TimelineItem]:
                                   link=f"/appuntamenti/{row['id']}", author="Google Calendar",
                                   date_only=row["src_start_at"] is None))
         if row["visit_outcome"]:
-            excerpt = (row["visit_report"] or "")[:240]
-            items.append(TimelineItem(row["visited_at"] or row["updated_at"], "Resoconto",
-                                      label(row["visit_outcome"]), excerpt, f"/appuntamenti/{row['id']}#resoconto",
-                                      row["updated_by"]))
+            items.append(_report_item(db, row))
 
     for row in db.all(
         "SELECT o.*, s.display_name AS lead_name FROM Offer o LEFT JOIN StudentLead s ON s.id = o.student_lead_id "

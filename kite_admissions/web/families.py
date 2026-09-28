@@ -6,6 +6,7 @@ from typing import Any
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
+from .. import catalog
 from ..schema import FOLLOWUP_ACTIONS, MANUAL_INTERACTIONS
 from ..services import appointments as appointment_service
 from ..services import backups
@@ -13,6 +14,7 @@ from ..services import families as family_service
 from ..services import followups as followup_service
 from ..services import today as today_service
 from ..services import interactions as interaction_service
+from ..services import interview as interview_service
 from ..services import leads as lead_service
 from ..services import offers as offer_service
 from ..services import timeline as timeline_service
@@ -27,7 +29,7 @@ from ..services.common import (
     valid_uuid,
 )
 from ..timeutil import rome_today, utc_iso_to_local_input
-from . import flash_error, flash_ok, flash_warning, get_db, state
+from . import flash_error, flash_ok, flash_warning, get_db, safe_next, state
 
 bp = Blueprint("families", __name__, url_prefix="/famiglie")
 
@@ -61,6 +63,11 @@ def _year_options() -> list[str]:
     return lead_service.school_year_options(rome_today(state().now()))
 
 
+def _next_or(default: str) -> str:
+    """Pagina di ritorno richiesta dal modulo (per esempio il colloquio), solo se interna."""
+    return safe_next(request.form.get("next"), default)
+
+
 @bp.get("/")
 def index():
     db = get_db()
@@ -87,8 +94,8 @@ def index():
 def _render_family_form(form: Any, *, family=None, errors=None, duplicates=None, code: int = 200):
     return render_template(
         "family/form.html", active="families", form=form, family=family, errors=errors or [],
-        duplicates=duplicates or [], sources=family_service.CONTACT_SOURCES, years=_year_options(),
-        grades=lead_service.GRADE_SUGGESTIONS,
+        duplicates=duplicates or [], sources=catalog.CONTACT_SOURCES, years=_year_options(),
+        grades=catalog.GRADE_SUGGESTIONS,
     ), code
 
 
@@ -123,12 +130,18 @@ def detail(family_id: str):
     db = get_db()
     now = state().now()
     appointments = appointment_service.family_appointments(db, family_id)
+    leads = lead_service.family_leads(db, family_id)
+    last_meeting = interview_service.latest_meeting(db, family_id, now)
     return render_template(
         "family/detail.html", active="families", family=family,
-        leads=lead_service.family_leads(db, family_id), has_contact=family_service.has_contact(family),
-        years=_year_options(), grades=lead_service.GRADE_SUGGESTIONS, new_lead_id=new_id(),
+        leads=leads, has_contact=family_service.has_contact(family),
+        ages={lead["id"]: lead_service.age_info(lead, rome_today(now)) for lead in leads},
+        years=_year_options(), grades=catalog.GRADE_SUGGESTIONS, new_lead_id=new_id(),
         today=rome_today(now).isoformat(),
         appointments=appointments,
+        history=interview_service.history(db, family_id),
+        last_meeting=last_meeting,
+        last_meeting_lines=interview_service.compact_summary(db, last_meeting) if last_meeting else [],
         needs_report={row["id"] for row in appointments if appointment_service.needs_report(row, now)},
         timeline=timeline_service.family_timeline(db, family_id),
         offer_scopes=offer_service.family_offer_scopes(db, family_id),
@@ -205,10 +218,10 @@ def delete_note(family_id: str, note_id: str):
 def edit(family_id: str):
     family = _family_or_404(family_id)
     if request.method == "GET":
-        return _render_family_form(dict(family), family=family)
+        return _render_family_form({**dict(family), "next": safe_next(request.args.get("next"), "")}, family=family)
     form = request.form
     try:
-        values = family_service.parse_family(form)
+        values = family_service.parse_family(form, current=family)
         family_service.update_family(get_db(), family_id, values, revision=_revision(), now=state().now(),
                                      confirm_distinct=form.get("confirm_distinct") == "1")
     except ValidationError as exc:
@@ -218,7 +231,7 @@ def edit(family_id: str):
     except StaleWriteError as exc:
         return _render_family_form(form, family=family, errors=[exc.message], code=409)
     flash_ok("Dati della famiglia aggiornati.")
-    return redirect(url_for("families.detail", family_id=family_id))
+    return redirect(_next_or(url_for("families.detail", family_id=family_id)))
 
 
 @bp.post("/<family_id>/archivia")
@@ -261,7 +274,11 @@ def unarchive(family_id: str):
 def _render_lead_form(family, form: Any, *, lead=None, errors=None, similar=None, code: int = 200):
     return render_template(
         "family/lead_form.html", active="families", family=family, lead=lead, form=form,
-        errors=errors or [], similar=similar or [], years=_year_options(), grades=lead_service.GRADE_SUGGESTIONS,
+        errors=errors or [], similar=similar or [], years=_year_options(), grades=catalog.GRADE_SUGGESTIONS,
+        current_grades=catalog.CURRENT_GRADE_SUGGESTIONS, languages=catalog.LANGUAGES,
+        levels=catalog.LANGUAGE_LEVELS, other_rows=range(1, catalog.MAX_OTHER_LANGUAGES + 1),
+        today=rome_today(state().now()).isoformat(),
+        back=safe_next(form.get("next"), url_for("families.detail", family_id=family["id"]) + "#richieste"),
     ), code
 
 
@@ -269,14 +286,15 @@ def _render_lead_form(family, form: Any, *, lead=None, errors=None, similar=None
 def create_lead(family_id: str):
     family = _family_or_404(family_id)
     if request.method == "GET":
-        form: dict[str, Any] = {"new_id": new_id()}
+        form: dict[str, Any] = {}
         source_id = request.args.get("da")
         if source_id:
             form.update(lead_service.copy_for_new_year(_lead_or_404(family_id, source_id)))
+        form.update({"new_id": new_id(), "next": safe_next(request.args.get("next"), "")})
         return _render_lead_form(family, form)
     form = request.form
     try:
-        values = lead_service.parse_lead(form)
+        values = lead_service.parse_lead(form, today=rome_today(state().now()))
         lead_service.create_lead(get_db(), family_id, values, now=state().now(),
                                  lead_id=creation_id(form.get("new_id")),
                                  confirm_similar=form.get("confirm_similar") == "1")
@@ -288,7 +306,7 @@ def create_lead(family_id: str):
         flash_warning("La richiesta era già stata salvata: nessun doppione creato.")
         return redirect(url_for("families.detail", family_id=family_id))
     flash_ok("Richiesta aggiunta.")
-    return redirect(url_for("families.detail", family_id=family_id) + "#richieste")
+    return redirect(_next_or(url_for("families.detail", family_id=family_id) + "#richieste"))
 
 
 @bp.route("/<family_id>/richieste/<lead_id>/modifica", methods=["GET", "POST"])
@@ -296,10 +314,12 @@ def edit_lead(family_id: str, lead_id: str):
     family = _family_or_404(family_id)
     lead = _lead_or_404(family_id, lead_id)
     if request.method == "GET":
-        return _render_lead_form(family, dict(lead), lead=lead)
+        form = {**lead_service.form_from_lead(lead), "review_on": lead["review_on"],
+                "next": safe_next(request.args.get("next"), "")}
+        return _render_lead_form(family, form, lead=lead)
     form = request.form
     try:
-        values = lead_service.parse_lead(form)
+        values = lead_service.parse_lead(form, previous=lead, today=rome_today(state().now()))
         review_on = family_service.parse_date_field(form, "review_on", "Data di riesame")
         lead_service.update_lead(get_db(), lead_id, family_id, values, revision=_revision(), now=state().now(),
                                  review_on=review_on)
@@ -308,7 +328,7 @@ def edit_lead(family_id: str, lead_id: str):
     except StaleWriteError as exc:
         return _render_lead_form(family, form, lead=lead, errors=[exc.message], code=409)
     flash_ok("Richiesta aggiornata.")
-    return redirect(url_for("families.detail", family_id=family_id) + "#richieste")
+    return redirect(_next_or(url_for("families.detail", family_id=family_id) + "#richieste"))
 
 
 @bp.route("/<family_id>/richieste/<lead_id>/stato", methods=["GET", "POST"])

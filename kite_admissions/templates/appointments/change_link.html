@@ -18,9 +18,13 @@
         <dt>Nuova famiglia</dt><dd><a href="{{ url_for('families.detail', family_id=target.id) }}" target="_blank" rel="noopener"><strong>{{ target.display_name }}</strong></a>{% if target.archived_at %} <span class="badge badge-archived">archiviata</span>{% endif %}</dd>
       </dl>
       {% if has_report %}
-        <div class="flash flash-warning">Questo appuntamento ha un resoconto: anche il resoconto seguirà l'appuntamento nella nuova famiglia.</div>
+        <div class="flash flash-warning">Questo appuntamento ha un resoconto: anche il resoconto seguirà l'appuntamento nella nuova famiglia{% if has_interview %}, insieme al colloquio (sezioni compilate, bozza della conclusione){% endif %}.</div>
       {% endif %}
-      <div class="flash flash-info">Offerte ({{ offers_count }}) e follow-up aperti ({{ followups_count }}) della famiglia attuale <strong>non</strong> vengono trasferiti. Il riferimento al figlio viene azzerato.</div>
+      <div class="flash flash-info">Offerte ({{ offers_count }}) e follow-up aperti ({{ followups_count }}) della famiglia attuale <strong>non</strong> vengono trasferiti. Il riferimento al figlio viene azzerato.
+        {% if linked_followups %}I {{ linked_followups }} follow-up nati da questo incontro restano alla famiglia attuale e si staccano dal colloquio.{% endif %}</div>
+      {% if has_interview %}
+        <div class="flash flash-warning">I dati degli alunni aggiornati durante il colloquio (data di nascita, scuola, lingue, profilo) sono nelle richieste della famiglia attuale e <strong>restano lì</strong>: vanno corretti a mano nella nuova famiglia, se servono.</div>
+      {% endif %}
       <form method="post" action="{{ url_for('appointments.change_link', appointment_id=a.id) }}" class="form-actions">
         {{ csrf() }}<input type="hidden" name="revision" value="{{ a.revision }}">
         <input type="hidden" name="family_id" value="{{ target.id }}">
