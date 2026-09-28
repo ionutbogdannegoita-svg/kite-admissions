@@ -2,10 +2,10 @@
 
 ## Status
 
-`V1_1_COMPLETE` — in Pull Request verso `main`, in attesa di revisione e merge da parte di Ionut (nessun merge automatico).
+`V1_1_RELEASED` — **v1.1.0** rilasciata il **2026-09-28**: Pull Request #3 unita su `main` (merge `c200d78`), tag `v1.1.0`, Issue #2 chiusa.
 
-- **V1.0.0** (`7452456`, schema 1): su `main`, in uso reale dal collegamento «Avvia KITE Admissions».
-- **v1.1 — Interview Workflow** (Issue #2, branch `v1.1-interview-workflow`, schema 2): completata il **2026-09-27 (Europe/Rome)** nel worktree separato `C:\Users\ionut\kite-admissions-v1.1`, con test automatici, collaudo su Waitress con dati sintetici e revisione indipendente contro la specifica.
+- **V1.0.0** (tag `v1.0.0`, `7452456`, schema 1): release precedente. Il ritorno alla V1 è descritto nel README.
+- **v1.1.0 — Interview Workflow** (Issue #2, PR #3, schema 2): completata il **2026-09-27 (Europe/Rome)** nel worktree separato `C:\Users\ionut\kite-admissions-v1.1`, con test automatici, collaudo su Waitress con dati sintetici e revisione indipendente contro la specifica; rilasciata su `main` il 2026-09-28. Il database reale resta allo schema 1 fino al primo riavvio controllato dal collegamento, che crea la copia «pre-migrazione» e lo porta allo schema 2.
 
 Fonti: [SPEC.md](SPEC.md) (V1, con l'addendum v1.1 al §14), [specifica operativa v1.1](docs/PROPOSTA_V1.1_INTERVIEW_WORKFLOW.md) (versione 1.0, approvata dal titolare il 27/09/2026, OD-1…OD-7 risolte), [DECISIONS.md](DECISIONS.md) (DEC-024…DEC-034 per la v1.1). Le diciture storiche nell'intestazione della SPEC («da validare», «Nessuna implementazione avviata») restano come scritte: lo stato corrente è questa pagina.
 
@@ -29,6 +29,7 @@ Fonti: [SPEC.md](SPEC.md) (V1, con l'addendum v1.1 al §14), [specifica operativ
 ## Test
 
 - `.venv\Scripts\python.exe -m pytest` nel worktree: **304 test verdi** (i 170 della V1, con gli aggiornamenti dichiarati nella Issue, e 134 nuovi della v1.1 in `tests/test_v11_*.py`), su dati sintetici e cartelle temporanee.
+- Rilascio (2026-09-28): **304 passed** anche su `main` dopo il merge, nel checkout principale e in un clone fresco da GitHub con `.venv` nuova (`scripts\install.ps1 -Dev -NoShortcut`).
 - Test V1 aggiornati, come previsto dalla specifica (§10): `test_foundations.py` (versione dello schema e migrazioni su una versione successiva finta), `test_e2e.py` (fonte «Evento / open day»), `test_linking.py`, `test_timeline.py` e `tests/dataset.py` (prossimo passo per le visite svolte di appuntamenti collegati, OD-5).
 
 ## Collaudo v1.1 (2026-09-27)
@@ -62,11 +63,10 @@ Confermati dalla revisione: protocollo multi-record (ogni campo mostrato è lett
 
 ## NEXT ACTION (proprietario)
 
-1. Rivedere e unire su `main` la Pull Request della v1.1.
-2. Dopo il merge: «Chiudi applicazione», `git -C C:\Users\ionut\kite-admissions pull`, riavvio dal collegamento; controllare in «Dati e Google» la copia «pre-migrazione» e che i conteggi delle tabelle non siano cambiati. Ritorno alla V1 descritto nel README.
-3. Verificare con chi segue la privacy della scuola che l'informativa Admissions copra le nuove categorie (data di nascita del minore, scuola attuale, lingue, esigenze, note del colloquio).
-4. Al primo uso reale: provare il colloquio su un portatile e cronometrare chiusura e lettura del riepilogo; confrontare ogni anno le regole dell'età con la circolare iscrizioni.
-5. Restano validi i passi V1 non ancora fatti: configurazione di Google Calendar e destinazione della copia esterna dei backup.
+1. Primo riavvio controllato: «Chiudi applicazione» sull'istanza V1 ancora aperta, poi avvio dal collegamento (il checkout è già su `main`, `v1.1.0`); controllare in «Dati e Google» la copia «pre-operazione · migrazione», la versione dello schema 2 e che i conteggi delle tabelle non siano cambiati. Ritorno alla V1 descritto nel README.
+2. Verificare con chi segue la privacy della scuola che l'informativa Admissions copra le nuove categorie (data di nascita del minore, scuola attuale, lingue, esigenze, note del colloquio).
+3. Al primo uso reale: provare il colloquio su un portatile e cronometrare chiusura e lettura del riepilogo; confrontare ogni anno le regole dell'età con la circolare iscrizioni.
+4. Restano validi i passi V1 non ancora fatti: configurazione di Google Calendar e destinazione della copia esterna dei backup.
 
 ## Vincoli che restano validi
 

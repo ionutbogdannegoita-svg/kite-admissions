@@ -58,7 +58,7 @@ Gli orari, gli spostamenti e gli annullamenti si fanno sempre in Google Calendar
 ## Aggiornamento dalla V1 alla v1.1
 
 1. **Chiudi applicazione** dall'interfaccia.
-2. Aggiorna il checkout usato dal collegamento (dopo l'approvazione della Pull Request): `git -C C:\Users\ionut\kite-admissions pull` su `main`.
+2. Aggiorna il checkout usato dal collegamento alla release `v1.1.0`: `git -C C:\Users\ionut\kite-admissions pull` su `main`.
 3. Avvia dal collegamento: al primo avvio l'app crea la copia **«pre-migrazione»** (`backups\pre-operazione`, schema 1) e poi aggiorna il database allo schema 2. Se la copia non riesce, l'aggiornamento non parte e l'app si apre sulla pagina di ripristino.
 4. Controlla nella pagina **Dati e Google** che i conteggi delle tabelle siano quelli di prima.
 
